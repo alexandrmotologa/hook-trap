@@ -4,6 +4,32 @@ A lightweight webhook inspector, debugger, and local forwarding proxy built with
 
 When you develop applications that receive webhooks from Stripe, GitHub, Shopify, or Twilio, testing endpoints locally usually requires third party tunnel services or repeated manual requests. `hook-trap` runs locally, receives incoming payloads on isolated channel URLs, logs them in SQLite, streams them in real time over WebSockets to a dark mode dashboard, and replays them to your development server with one click.
 
+![hook-trap Dashboard Overview](docs/screenshots/01_dashboard_overview.png)
+
+## Screenshots
+
+<details open>
+<summary><strong>Expand interface gallery</strong></summary>
+<br/>
+
+| Dashboard Overview | Payload Diff Comparison |
+| :---: | :---: |
+| ![Dashboard Overview](docs/screenshots/01_dashboard_overview.png) | ![Payload Diff Viewer](docs/screenshots/04_payload_diff.png) |
+
+| Request Headers & Signature Badges | Built-in Signature Validator |
+| :---: | :---: |
+| ![Request Headers](docs/screenshots/02_request_headers.png) | ![Signature Validator](docs/screenshots/03_signature_validator.png) |
+
+| Code Snippet Export (cURL, Python, JS) | Postman & Bruno Collection Export |
+| :---: | :---: |
+| ![Code Export](docs/screenshots/05_code_export.png) | ![Collection Export](docs/screenshots/06_collection_export.png) |
+
+| Keyboard Shortcuts Dialog |
+| :---: |
+| ![Keyboard Shortcuts](docs/screenshots/07_keyboard_shortcuts.png) |
+
+</details>
+
 ## Features
 
 - **Universal ingestion paths**: Send requests using any HTTP method (POST, GET, PUT, PATCH, DELETE) to `/catch/<channel_id>` or nested subpaths like `/catch/<channel_id>/v1/events`.
