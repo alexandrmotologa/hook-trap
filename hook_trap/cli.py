@@ -1,3 +1,4 @@
+import sys
 import webbrowser
 
 import typer
@@ -10,6 +11,12 @@ from rich.text import Text
 from hook_trap.config import settings
 from hook_trap.server import create_app
 
+if sys.platform == "win32":
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    if hasattr(sys.stderr, "reconfigure"):
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
 cli = typer.Typer(
     name="hook-trap",
     help="Real-Time Webhook Inspector & Local Forwarder",
@@ -20,7 +27,7 @@ console = Console()
 
 def print_banner(host: str, port: int, db_path: str, auto_forward: str | None) -> None:
     """Render startup dashboard info using Rich."""
-    title = Text("🪝  HOOK-TRAP", style="bold cyan")
+    title = Text("HOOK-TRAP", style="bold cyan")
 
     grid = Table.grid(padding=(0, 2))
     grid.add_column(style="bold white", justify="right")
@@ -67,8 +74,8 @@ def main(
         target_url = f"http://{host}:{port}/"
         try:
             webbrowser.open(target_url)
-        except Exception:
-            pass
+        except Exception as exc:  # noqa: BLE001
+            console.print(f"[dim]Could not auto-open browser: {exc}[/dim]")
 
     app = create_app(db_path=db_path, default_auto_forward_url=auto_forward)
 
