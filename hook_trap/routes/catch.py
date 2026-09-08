@@ -10,6 +10,7 @@ from hook_trap.config import settings
 from hook_trap.database import (
     get_channel_config,
     insert_webhook_request,
+    prune_channel_requests,
 )
 from hook_trap.forwarder import forward_request
 from hook_trap.ws_manager import ws_manager
@@ -98,11 +99,13 @@ async def _handle_ingestion(
     }
     await ws_manager.broadcast(channel_id, broadcast_payload)
 
-    # Check for auto-forwarding configuration
+    # Check for auto-forwarding and retention pruning configuration
     channel_cfg = await get_channel_config(settings.db_path, channel_id)
     auto_forward_target = None
-    if channel_cfg and channel_cfg.get("auto_forward_url"):
-        auto_forward_target = channel_cfg["auto_forward_url"]
+    max_requests = 500
+    if channel_cfg:
+        auto_forward_target = channel_cfg.get("auto_forward_url")
+        max_requests = channel_cfg.get("max_requests") or 500
     elif settings.default_auto_forward_url:
         auto_forward_target = settings.default_auto_forward_url
 
@@ -115,6 +118,14 @@ async def _handle_ingestion(
             auto_forward_target,
             settings.replay_timeout,
         )
+
+    # Prune old requests in background
+    background_tasks.add_task(
+        prune_channel_requests,
+        settings.db_path,
+        channel_id,
+        max_requests,
+    )
 
     # Allow custom status response override via query param for testing upstream retries
     status_code = 200

@@ -142,3 +142,31 @@ async def test_clear_channel_requests(temp_db):
 
     items, total = await get_webhook_requests(temp_db, "to_clear")
     assert total == 0
+
+
+@pytest.mark.asyncio
+async def test_prune_channel_requests(temp_db):
+    from hook_trap.database import get_all_channel_requests_for_export, prune_channel_requests
+
+    # Insert 10 requests into prune_test channel
+    for i in range(10):
+        await insert_webhook_request(
+            temp_db,
+            {
+                "channel_id": "prune_test",
+                "method": "POST",
+                "path": f"/catch/prune_test/{i}",
+                "body_raw": f"body {i}",
+            },
+        )
+
+    # Prune to keep only latest 4
+    deleted = await prune_channel_requests(temp_db, "prune_test", max_count=4)
+    assert deleted == 6
+
+    _remaining, total = await get_webhook_requests(temp_db, "prune_test")
+    assert total == 4
+
+    exported = await get_all_channel_requests_for_export(temp_db, "prune_test")
+    assert len(exported) == 4
+    assert all(r["channel_id"] == "prune_test" for r in exported)

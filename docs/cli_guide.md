@@ -4,15 +4,15 @@ This document describes command line options, environment variables, and configu
 
 ## Commands
 
-### `hook-trap`
+### `hook-trap serve`
 
-Launches the web server, SQLite persistence engine, and dashboard.
+Launches the web server, SQLite persistence engine, and dashboard. Running `hook-trap` without subcommands defaults to `serve`.
 
 ```bash
-hook-trap [OPTIONS]
+hook-trap serve [OPTIONS]
 ```
 
-### Options
+#### Options
 
 | Flag | Shorthand | Type | Default | Description |
 |---|---|---|---|---|
@@ -20,39 +20,55 @@ hook-trap [OPTIONS]
 | `--host` | `-h` | TEXT | `127.0.0.1` | Network host interface |
 | `--db-path` | | TEXT | `hook_trap.db` | File path for the SQLite database |
 | `--auto-forward` | `-f` | TEXT | `None` | Default URL for automatic forwarding |
+| `--tunnel` | `-t` | TEXT | `None` | Start a public HTTPS tunnel (`cloudflare`, `ngrok`, `auto`) |
 | `--open-browser` | `-b` | BOOLEAN | `False` | Opens default web browser on launch |
 | `--log-level` | | TEXT | `info` | Logging verbosity (`debug`, `info`, `warning`, `error`) |
 
-### Examples
+#### Examples
 
-Run on a custom port:
-
-```bash
-hook-trap --port 9000
-```
-
-Listen on all network interfaces (for Docker or local network sharing):
+Run on a custom port with a public Cloudflare tunnel:
 
 ```bash
-hook-trap --host 0.0.0.0 --port 8080
-```
-
-Specify a persistent database path in another directory:
-
-```bash
-hook-trap --db-path /var/lib/hook-trap/data.db
-```
-
-Launch and open the browser automatically:
-
-```bash
-hook-trap --open-browser
+hook-trap serve --port 8080 --tunnel cloudflare
 ```
 
 Enable auto-forwarding for all incoming requests:
 
 ```bash
-hook-trap --auto-forward http://localhost:4000/webhooks
+hook-trap serve --auto-forward http://localhost:3000/api/webhook
+```
+
+---
+
+### `hook-trap tail <channel_id>`
+
+Streams incoming webhooks live in your terminal using WebSockets without opening the browser.
+
+```bash
+hook-trap tail <channel_id> [OPTIONS]
+```
+
+#### Options
+
+| Flag | Shorthand | Type | Default | Description |
+|---|---|---|---|---|
+| `--host` | `-h` | TEXT | `127.0.0.1` | Server host |
+| `--port` | `-p` | INTEGER | `8080` | Server port |
+| `--headers` | | BOOLEAN | `False` | Display all request headers in terminal output |
+| `--raw` | | BOOLEAN | `False` | Output raw JSON lines |
+
+#### Examples
+
+Stream events for channel `stripe_test`:
+
+```bash
+hook-trap tail stripe_test
+```
+
+Stream events including header tables:
+
+```bash
+hook-trap tail stripe_test --headers
 ```
 
 ---

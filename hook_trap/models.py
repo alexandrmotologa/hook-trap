@@ -61,6 +61,7 @@ class ChannelConfig(BaseModel):
     channel_id: str
     name: str | None = None
     auto_forward_url: str | None = None
+    max_requests: int = 500
     created_at: str
     updated_at: str
 
@@ -70,6 +71,7 @@ class ChannelConfigUpdate(BaseModel):
 
     name: str | None = None
     auto_forward_url: str | None = None
+    max_requests: int | None = None
 
 
 class SignatureVerifyRequest(BaseModel):

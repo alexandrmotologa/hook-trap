@@ -1,13 +1,16 @@
 import hashlib
 import hmac
 import logging
+import uuid
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Response
+from fastapi.responses import JSONResponse
 
 from hook_trap.config import settings
 from hook_trap.database import (
     delete_channel_requests,
+    get_all_channel_requests_for_export,
     get_channel_config,
     get_replay_logs_for_request,
     get_webhook_request_detail,
@@ -116,14 +119,135 @@ async def update_channel_configuration(
     channel_id: str,
     payload: ChannelConfigUpdate,
 ) -> dict[str, Any]:
-    """Save or update channel settings (e.g. auto-forwarding target URL)."""
+    """Save or update channel settings (e.g. auto-forwarding target URL, max requests)."""
     updated = await upsert_channel_config(
         db_path=settings.db_path,
         channel_id=channel_id,
         name=payload.name,
         auto_forward_url=payload.auto_forward_url,
+        max_requests=payload.max_requests,
     )
     return updated
+
+
+@router.get("/channels/{channel_id}/export")
+async def export_channel_collection(
+    channel_id: str,
+    format: str = Query("postman", pattern="^(postman|bruno|json)$"),
+) -> Response:
+    """Export captured webhooks as a Postman Collection v2.1, Bruno, or JSON dump."""
+    requests = await get_all_channel_requests_for_export(settings.db_path, channel_id)
+
+    if format == "postman":
+        items = []
+        for req in requests:
+            headers_list = [
+                {"key": k, "value": v, "type": "text"}
+                for k, v in req.get("headers", {}).items()
+                if k.lower() not in ("host", "content-length")
+            ]
+            body_raw = req.get("body_raw", "")
+            path_clean = req.get("path", "").lstrip("/")
+            path_segments = path_clean.split("/") if path_clean else []
+
+            is_json = req.get("body_json") is not None
+            body_obj = {
+                "mode": "raw",
+                "raw": body_raw,
+                "options": {"raw": {"language": "json" if is_json else "text"}},
+            }
+
+            items.append(
+                {
+                    "name": f"{req['method']} {req['path']} ({req['timestamp'][:19]})",
+                    "request": {
+                        "method": req["method"],
+                        "header": headers_list,
+                        "body": body_obj,
+                        "url": {
+                            "raw": "{{base_url}}" + req["path"],
+                            "host": ["{{base_url}}"],
+                            "path": path_segments,
+                        },
+                    },
+                    "response": [],
+                }
+            )
+
+        collection = {
+            "info": {
+                "_postman_id": str(uuid.uuid4()),
+                "name": f"hook-trap - {channel_id}",
+                "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+            },
+            "item": items,
+            "variable": [
+                {
+                    "key": "base_url",
+                    "value": f"http://{settings.host}:{settings.port}",
+                    "type": "string",
+                }
+            ],
+        }
+        return JSONResponse(
+            content=collection,
+            headers={
+                "Content-Disposition": f'attachment; filename="hook-trap-{channel_id}-postman.json"'
+            },
+        )
+
+    elif format == "bruno":
+        # Bruno JSON collection representation
+        items = []
+        for req in requests:
+            headers_dict = {
+                k: v
+                for k, v in req.get("headers", {}).items()
+                if k.lower() not in ("host", "content-length")
+            }
+            items.append(
+                {
+                    "name": f"{req['method']}_{req['id'][:8]}",
+                    "request": {
+                        "method": req["method"],
+                        "url": f"http://{settings.host}:{settings.port}{req['path']}",
+                        "headers": headers_dict,
+                        "body": req.get("body_raw", ""),
+                    },
+                }
+            )
+        bruno_data = {
+            "version": "1",
+            "name": f"hook-trap-{channel_id}",
+            "type": "collection",
+            "items": items,
+        }
+        return JSONResponse(
+            content=bruno_data,
+            headers={
+                "Content-Disposition": f'attachment; filename="hook-trap-{channel_id}-bruno.json"'
+            },
+        )
+
+    else:
+        # Standard JSON array dump
+        return JSONResponse(
+            content=requests,
+            headers={
+                "Content-Disposition": f'attachment; filename="hook-trap-{channel_id}.json"'
+            },
+        )
+
+
+@router.get("/system/status")
+async def system_status() -> dict[str, Any]:
+    """Retrieve runtime system info including active public tunnel URL if present."""
+    return {
+        "version": "0.1.0",
+        "host": settings.host,
+        "port": settings.port,
+        "public_tunnel_url": settings.public_tunnel_url,
+    }
 
 
 @router.post("/verify-signature", response_model=SignatureVerifyResponse)

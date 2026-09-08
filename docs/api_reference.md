@@ -178,6 +178,7 @@ Retrieves persisted configuration for a channel.
   "channel_id": "a1b2c3d4",
   "name": "Local Checkout Testing",
   "auto_forward_url": "http://localhost:3000/api/webhook",
+  "max_requests": 500,
   "created_at": "2026-09-09T00:00:00Z",
   "updated_at": "2026-09-09T00:15:00Z"
 }
@@ -185,7 +186,7 @@ Retrieves persisted configuration for a channel.
 
 ### Update Channel Configuration
 
-Updates or configures automatic forwarding for a channel.
+Updates or configures automatic forwarding and request retention for a channel.
 
 - **Route**: `PUT /api/channels/{channel_id}/config`
 - **Request body**:
@@ -193,7 +194,37 @@ Updates or configures automatic forwarding for a channel.
 ```json
 {
   "name": "Local Checkout Testing",
-  "auto_forward_url": "http://localhost:3000/api/webhook"
+  "auto_forward_url": "http://localhost:3000/api/webhook",
+  "max_requests": 500
+}
+```
+
+### Export Channel Collection
+
+Exports all stored webhooks for a channel in Postman v2.1, Bruno, or JSON format.
+
+- **Route**: `GET /api/channels/{channel_id}/export`
+- **Query parameters**:
+  - `format` (string, optional, default: `postman`): Export format (`postman`, `bruno`, `json`).
+
+#### Response
+
+Returns JSON with attachment download headers (`Content-Disposition: attachment; filename="..."`).
+
+### Get System Status
+
+Returns server runtime information, including active public tunnel URL if configured.
+
+- **Route**: `GET /api/system/status`
+
+#### Response
+
+```json
+{
+  "version": "0.1.0",
+  "host": "127.0.0.1",
+  "port": 8080,
+  "public_tunnel_url": "https://random-subdomain.trycloudflare.com"
 }
 ```
 

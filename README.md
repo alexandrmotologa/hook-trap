@@ -8,11 +8,17 @@ When you develop applications that receive webhooks from Stripe, GitHub, Shopify
 
 - **Universal ingestion paths**: Send requests using any HTTP method (POST, GET, PUT, PATCH, DELETE) to `/catch/<channel_id>` or nested subpaths like `/catch/<channel_id>/v1/events`.
 - **Live WebSocket streaming**: Inspect payloads and headers as they arrive without refreshing the browser.
+- **Terminal live tailing**: Stream incoming events directly to your command line with `hook-trap tail <channel_id>`.
+- **Public tunnel support**: Expose your local inspector over a public HTTPS address using `--tunnel cloudflare` or `--tunnel ngrok`.
+- **Sample webhook generator**: Send pre-configured Stripe, GitHub, or Shopify test webhooks to your channel with one click.
+- **Payload diff comparison**: Compare two captured payloads side by side to inspect changes between webhook deliveries and retries.
 - **Exact payload and signature retention**: Preserves raw body bytes and headers, including HMAC signatures from Stripe (`Stripe-Signature`), GitHub (`X-Hub-Signature-256`), and Shopify (`X-Shopify-Hmac-Sha256`).
 - **HTTP replay engine**: Replay any captured webhook to a local endpoint such as `http://localhost:3000/api/webhook`, recording latency, status codes, and response headers.
 - **Automatic forwarding**: Forward incoming webhooks to your local service as soon as they hit the receiver.
 - **Built-in signature validator**: Test your webhook signing secrets against incoming headers and raw request bodies directly in the interface.
-- **Code export**: Copy captured requests as ready-to-run cURL commands, Python `httpx` scripts, or JavaScript `fetch` calls.
+- **Code & collection export**: Export captured requests as cURL commands, Python `httpx` scripts, JavaScript `fetch` calls, or complete Postman v2.1 and Bruno collections.
+- **Channel retention policies**: Configure maximum stored requests per channel with automatic database pruning.
+- **Keyboard navigation**: Navigate requests and trigger actions using vim-style and standard shortcuts (`j`, `k`, `r`, `c`, `d`, `s`, `e`, `?`).
 - **Zero build dependencies**: The web inspector uses vanilla JavaScript and CSS served directly by FastAPI. No Node.js or build steps required.
 
 ## Quick start
@@ -42,15 +48,35 @@ uv pip install -e ".[dev]"
 Start the server using the command line interface:
 
 ```bash
-hook-trap --port 8080 --open-browser
+hook-trap serve --port 8080 --open-browser
 ```
 
 By default, the server listens on `http://127.0.0.1:8080`.
 
+To start with a public HTTPS tunnel via Cloudflare:
+
+```bash
+hook-trap serve --port 8080 --tunnel cloudflare
+```
+
 To automatically forward every incoming webhook to your local development service:
 
 ```bash
-hook-trap --port 8080 --auto-forward http://localhost:3000/api/webhook
+hook-trap serve --port 8080 --auto-forward http://localhost:3000/api/webhook
+```
+
+### Streaming events in your terminal
+
+To monitor webhooks live in the console without opening a browser:
+
+```bash
+hook-trap tail a1b2c3d4
+```
+
+To inspect full headers in the terminal stream:
+
+```bash
+hook-trap tail a1b2c3d4 --headers
 ```
 
 ## How to use
@@ -66,10 +92,29 @@ curl -X POST http://localhost:8080/catch/a1b2c3d4 \
   -d '{"event": "user.created", "user_id": 42}'
 ```
 
-4. The request appears immediately in the left sidebar. Click it to inspect formatted JSON, exact raw headers, and query parameters.
+4. Or click **⚡ Send Sample** in the top navigation bar to generate test Stripe or GitHub events immediately.
 5. In the top replay bar, enter your local API address (`http://localhost:3000/api/webhook`) and click **Replay** to send the exact request to your local application.
 
-## CLI options
+## Keyboard shortcuts
+
+Press `?` in the dashboard to view all shortcuts:
+
+| Key | Action |
+|---|---|
+| `j` or `↓` | Select next request in list |
+| `k` or `↑` | Select previous request in list |
+| `r` | Replay currently selected request |
+| `c` | Copy ingestion URL |
+| `d` | Open payload Diff comparison viewer |
+| `s` | Open Send Sample Webhook dialog |
+| `e` | Open Code Export modal (cURL, Python, JS) |
+| `/` | Focus the search input bar |
+| `?` | Open keyboard shortcuts help |
+| `Esc` | Close any open modal |
+
+## CLI reference
+
+### `hook-trap serve`
 
 | Option | Shorthand | Default | Description |
 |---|---|---|---|
@@ -77,8 +122,18 @@ curl -X POST http://localhost:8080/catch/a1b2c3d4 \
 | `--host` | `-h` | `127.0.0.1` | Network interface to bind to |
 | `--db-path` | | `hook_trap.db` | File path for the SQLite database |
 | `--auto-forward` | `-f` | None | Default target URL for automatic forwarding |
+| `--tunnel` | `-t` | None | Start a public HTTPS tunnel (`cloudflare`, `ngrok`, `auto`) |
 | `--open-browser` | `-b` | `false` | Automatically opens the browser dashboard |
 | `--log-level` | | `info` | Uvicorn logging level |
+
+### `hook-trap tail <channel_id>`
+
+| Option | Shorthand | Default | Description |
+|---|---|---|---|
+| `--host` | `-h` | `127.0.0.1` | Server host |
+| `--port` | `-p` | `8080` | Server port |
+| `--headers` | | `false` | Display all request headers in terminal output |
+| `--raw` | | `false` | Output raw JSON lines |
 
 ## Testing upstream retries
 

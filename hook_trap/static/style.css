@@ -988,6 +988,222 @@ input:checked + .slider:before {
   justify-content: flex-end;
 }
 
+.modal-lg {
+  max-width: 720px;
+}
+
+.modal-xl {
+  max-width: 900px;
+  width: 95%;
+}
+
+/* Tunnel Badge */
+.tunnel-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background-color: rgba(56, 189, 248, 0.15);
+  border: 1px solid var(--color-brand);
+  color: var(--color-brand);
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  margin-left: 12px;
+}
+
+.tunnel-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background-color: var(--color-brand);
+  box-shadow: 0 0 6px var(--color-brand);
+}
+
+.channel-header-right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.url-type-toggle {
+  font-size: 0.65rem;
+  cursor: pointer;
+  color: var(--text-muted);
+  text-decoration: underline;
+}
+
+/* Retention Row */
+.retention-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.retention-input {
+  width: 70px;
+  background-color: var(--bg-base);
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  text-align: center;
+}
+
+.form-textarea {
+  width: 100%;
+  background-color: var(--bg-base);
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  padding: 10px;
+  border-radius: var(--radius-md);
+  outline: none;
+  resize: vertical;
+}
+
+.form-textarea:focus {
+  border-color: var(--border-active);
+}
+
+/* Diff Viewer */
+.diff-control-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.diff-picker-col {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.diff-picker-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.diff-picker-tag {
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  padding: 7px 10px;
+  background: var(--bg-base);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+}
+
+.diff-output-container {
+  background-color: var(--bg-base);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 14px;
+  max-height: 480px;
+  overflow-y: auto;
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  line-height: 1.6;
+}
+
+.diff-row {
+  display: flex;
+  padding: 2px 4px;
+  border-radius: 2px;
+}
+
+.diff-row.diff-add {
+  background-color: rgba(46, 160, 67, 0.15);
+  color: #7ee787;
+}
+
+.diff-row.diff-del {
+  background-color: rgba(248, 81, 73, 0.15);
+  color: #f85149;
+}
+
+.diff-row.diff-mod {
+  background-color: rgba(210, 153, 34, 0.15);
+  color: #e3b341;
+}
+
+.diff-row.diff-same {
+  color: var(--text-muted);
+}
+
+.diff-sign {
+  width: 20px;
+  user-select: none;
+  font-weight: 700;
+}
+
+/* Export Options */
+.export-options-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+}
+
+.export-option-card {
+  background: var(--bg-base);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.export-option-card h4 {
+  font-size: 0.85rem;
+  color: var(--text-primary);
+}
+
+.export-option-card p {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  flex: 1;
+}
+
+/* Shortcuts Table */
+.shortcuts-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.shortcuts-table td {
+  padding: 8px 10px;
+  font-size: 0.8rem;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.shortcuts-table tr:last-child td {
+  border-bottom: none;
+}
+
+kbd {
+  display: inline-block;
+  padding: 2px 6px;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--text-primary);
+  background-color: var(--bg-subtle);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.3);
+}
+
 .hidden {
   display: none !important;
 }

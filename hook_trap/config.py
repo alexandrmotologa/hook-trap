@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     default_auto_forward_url: str | None = None
     cors_origins: list[str] = ["*"]
     replay_timeout: float = 10.0
+    public_tunnel_url: str | None = None
 
 
 settings = Settings()

@@ -12,11 +12,125 @@
   let activeMethodFilter = "ALL";
   let activeSearchTerm = "";
   let activePayloadView = "formatted"; // "formatted" | "raw"
+  let publicTunnelUrl = null;
+  let isViewingPublicUrl = false;
+
+  // Sample templates for quick mock webhook sending
+  const SAMPLE_TEMPLATES = {
+    "stripe-payment": {
+      subpath: "v1/events",
+      headers: {
+        "Content-Type": "application/json",
+        "Stripe-Signature": "t=1690000000,v1=52571829f704d4ef01354a35f3ff5e0cffd6a2",
+        "User-Agent": "Stripe/1.0 (+https://stripe.com/docs/webhooks)",
+      },
+      body: {
+        id: "evt_3Njh4b2eZvKYlo2C0zXp0001",
+        object: "event",
+        api_version: "2024-06-20",
+        created: 1690000000,
+        type: "payment_intent.succeeded",
+        data: {
+          object: {
+            id: "pi_3Njh4b2eZvKYlo2C0zXp0001",
+            object: "payment_intent",
+            amount: 4900,
+            amount_received: 4900,
+            currency: "usd",
+            customer: "cus_ON8K3P01",
+            status: "succeeded",
+          },
+        },
+      },
+    },
+    "stripe-checkout": {
+      subpath: "v1/events",
+      headers: {
+        "Content-Type": "application/json",
+        "Stripe-Signature": "t=1690000000,v1=abc99887766554433221100ff",
+      },
+      body: {
+        id: "evt_12345checkout",
+        type: "checkout.session.completed",
+        data: {
+          object: {
+            id: "cs_test_a1b2c3",
+            payment_status: "paid",
+            customer_email: "jane.doe@example.com",
+            amount_total: 12500,
+            currency: "usd",
+          },
+        },
+      },
+    },
+    "github-push": {
+      subpath: "github",
+      headers: {
+        "Content-Type": "application/json",
+        "X-GitHub-Event": "push",
+        "X-Hub-Signature-256": "sha256=d8e8fca2dc0f896fd7cb4cb0031ba249",
+        "User-Agent": "GitHub-Hookshot/1.0",
+      },
+      body: {
+        ref: "refs/heads/main",
+        before: "6113728f27ae82c7b1a12fce9384f8f43f3b8212",
+        after: "0000000000000000000000000000000000000000",
+        repository: {
+          id: 1296269,
+          name: "Hello-World",
+          full_name: "octocat/Hello-World",
+          private: false,
+          owner: { name: "octocat", email: "octocat@github.com" },
+        },
+        pusher: { name: "octocat", email: "octocat@github.com" },
+      },
+    },
+    "github-pr": {
+      subpath: "github",
+      headers: {
+        "Content-Type": "application/json",
+        "X-GitHub-Event": "pull_request",
+        "X-Hub-Signature-256": "sha256=ef90812347bcfae89012456",
+      },
+      body: {
+        action: "opened",
+        number: 42,
+        pull_request: {
+          title: "Improve webhook replay engine latency",
+          user: { login: "alexandrmotologa" },
+          state: "open",
+        },
+      },
+    },
+    "shopify-order": {
+      subpath: "shopify",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Shopify-Topic": "orders/create",
+        "X-Shopify-Hmac-Sha256": "WlhqU0Z1aFhOWHlK...",
+      },
+      body: {
+        id: 8209829119461,
+        email: "buyer@example.com",
+        total_price: "189.50",
+        currency: "USD",
+        financial_status: "paid",
+      },
+    },
+    custom: {
+      subpath: "custom",
+      headers: { "Content-Type": "application/json" },
+      body: { event: "custom.notification", timestamp: new Date().toISOString() },
+    },
+  };
 
   // DOM Elements
   const els = {
     wsStatus: document.getElementById("ws-status"),
     wsStatusText: document.getElementById("ws-status-text"),
+    tunnelBadge: document.getElementById("tunnel-badge"),
+    tunnelUrlText: document.getElementById("tunnel-url-text"),
+    urlTypeToggle: document.getElementById("url-type-toggle"),
     btnNewChannel: document.getElementById("btn-new-channel"),
     channelBadge: document.getElementById("channel-badge"),
     ingestUrlInput: document.getElementById("ingest-url-input"),
@@ -24,6 +138,7 @@
     autoforwardToggle: document.getElementById("autoforward-toggle"),
     autoforwardUrl: document.getElementById("autoforward-url"),
     btnSaveAutoforward: document.getElementById("btn-save-autoforward"),
+    retentionMaxInput: document.getElementById("retention-max-input"),
     searchInput: document.getElementById("search-input"),
     filterPills: document.querySelectorAll(".filter-pill"),
     requestCount: document.getElementById("request-count"),
@@ -37,6 +152,7 @@
     replayBtnText: document.getElementById("replay-btn-text"),
     replayFeedback: document.getElementById("replay-feedback"),
     btnCodeExport: document.getElementById("btn-code-export"),
+    btnOpenDiff: document.getElementById("btn-open-diff"),
 
     detailMethod: document.getElementById("detail-method"),
     detailPath: document.getElementById("detail-path"),
@@ -69,15 +185,37 @@
     btnVerifySig: document.getElementById("btn-verify-sig"),
     sigResult: document.getElementById("sig-result"),
 
+    // Modals
     exportModal: document.getElementById("export-modal"),
-    btnCloseModal: document.getElementById("btn-close-modal"),
     exportCodeBlock: document.getElementById("export-code-block"),
     btnCopyExport: document.getElementById("btn-copy-export"),
     exportTabBtns: document.querySelectorAll(".export-tab-btn"),
+
+    sampleModal: document.getElementById("sample-modal"),
+    btnOpenSampleModal: document.getElementById("btn-open-sample-modal"),
+    btnEmptySample: document.getElementById("btn-empty-sample"),
+    samplePresetSelect: document.getElementById("sample-preset-select"),
+    sampleSubpathInput: document.getElementById("sample-subpath-input"),
+    sampleBodyEditor: document.getElementById("sample-body-editor"),
+    btnSendSample: document.getElementById("btn-send-sample"),
+
+    diffModal: document.getElementById("diff-modal"),
+    diffBaseInfo: document.getElementById("diff-base-info"),
+    diffCompareSelect: document.getElementById("diff-compare-select"),
+    diffOutputContainer: document.getElementById("diff-output-container"),
+
+    collectionModal: document.getElementById("collection-modal"),
+    btnOpenCollectionModal: document.getElementById("btn-open-collection-modal"),
+    btnDownloadPostman: document.getElementById("btn-download-postman"),
+    btnDownloadBruno: document.getElementById("btn-download-bruno"),
+    btnDownloadJson: document.getElementById("btn-download-json"),
+
+    shortcutsModal: document.getElementById("shortcuts-modal"),
+    btnShortcutsModal: document.getElementById("btn-shortcuts-modal"),
   };
 
-  // Extract channel ID from path: /c/{channel_id}
-  function initChannel() {
+  // Initialize Channel & Check System Status
+  async function initChannel() {
     const parts = window.location.pathname.split("/").filter(Boolean);
     if (parts.length >= 2 && parts[0] === "c") {
       channelId = parts[1];
@@ -86,9 +224,23 @@
     }
 
     els.channelBadge.textContent = channelId;
-    const origin = window.location.origin;
-    const fullIngestUrl = `${origin}/catch/${channelId}`;
-    els.ingestUrlInput.value = fullIngestUrl;
+    updateIngestUrlDisplay();
+
+    // Check system info for public tunnel
+    try {
+      const res = await fetch("/api/system/status");
+      if (res.ok) {
+        const data = await res.json();
+        if (data.public_tunnel_url) {
+          publicTunnelUrl = data.public_tunnel_url;
+          els.tunnelBadge.classList.remove("hidden");
+          els.tunnelUrlText.textContent = "Public Tunnel Active";
+          els.urlTypeToggle.classList.remove("hidden");
+        }
+      }
+    } catch {
+      // Ignored if offline
+    }
 
     // Restore last used replay target from localStorage
     const savedReplayUrl = localStorage.getItem("hook_trap_replay_target");
@@ -97,7 +249,20 @@
     }
   }
 
-  // Load initial channel config from server
+  function updateIngestUrlDisplay() {
+    if (isViewingPublicUrl && publicTunnelUrl) {
+      els.ingestUrlInput.value = `${publicTunnelUrl}/catch/${channelId}`;
+      els.urlTypeToggle.textContent = "Switch to Local URL";
+    } else {
+      const origin = window.location.origin;
+      els.ingestUrlInput.value = `${origin}/catch/${channelId}`;
+      if (publicTunnelUrl) {
+        els.urlTypeToggle.textContent = "Switch to Public Tunnel";
+      }
+    }
+  }
+
+  // Load Channel Config
   async function loadChannelConfig() {
     try {
       const res = await fetch(`/api/channels/${channelId}/config`);
@@ -110,28 +275,32 @@
             els.replayTargetInput.value = data.auto_forward_url;
           }
         }
+        if (data.max_requests) {
+          els.retentionMaxInput.value = data.max_requests;
+        }
       }
     } catch (err) {
       console.warn("Could not fetch channel config", err);
     }
   }
 
-  // Save auto-forward settings
+  // Save Channel Config (Auto-forward & Retention)
   async function saveChannelConfig() {
     const isEnabled = els.autoforwardToggle.checked;
     const url = isEnabled ? els.autoforwardUrl.value.trim() : null;
+    const maxReqs = parseInt(els.retentionMaxInput.value) || 500;
 
     try {
       const res = await fetch(`/api/channels/${channelId}/config`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ auto_forward_url: url }),
+        body: JSON.stringify({ auto_forward_url: url, max_requests: maxReqs }),
       });
       if (res.ok) {
-        showFeedback("Auto-forward setting saved", "success");
+        showFeedback("Channel settings saved", "success");
       }
-    } catch (err) {
-      showFeedback("Failed to save auto-forward setting", "error");
+    } catch {
+      showFeedback("Failed to save settings", "error");
     }
   }
 
@@ -195,7 +364,6 @@
         requests = data.items || [];
         renderRequestList();
 
-        // Select first if nothing selected
         if (!selectedRequestId && requests.length > 0) {
           selectRequest(requests[0].id);
         }
@@ -206,12 +374,10 @@
   }
 
   function handleIncomingRequest(summary) {
-    // Check if it matches active method filter
     const matchesFilter =
       activeMethodFilter === "ALL" ||
       summary.method.toUpperCase() === activeMethodFilter.toUpperCase();
 
-    // Check search term
     const matchesSearch =
       !activeSearchTerm ||
       summary.path.toLowerCase().includes(activeSearchTerm.toLowerCase()) ||
@@ -225,21 +391,18 @@
       updateRequestCount();
     }
 
-    // Auto-select if nothing was selected yet
     if (!selectedRequestId) {
       selectRequest(summary.id);
     }
   }
 
   function handleIncomingReplay(replayData) {
-    // Update replay count in list item
     const target = requests.find((r) => r.id === replayData.request_id);
     if (target) {
       target.replay_count = (target.replay_count || 0) + 1;
       renderRequestList();
     }
 
-    // If currently inspecting this request, reload detail
     if (selectedRequestId === replayData.request_id) {
       loadRequestDetail(selectedRequestId);
     }
@@ -253,7 +416,7 @@
         <div class="empty-state">
           <div class="empty-icon">📡</div>
           <div class="empty-title">Waiting for webhooks...</div>
-          <div class="empty-desc">Send an HTTP request to the ingestion URL above.</div>
+          <div class="empty-desc">Send an HTTP request or click "⚡ Send Sample" above.</div>
         </div>
       `;
       return;
@@ -290,7 +453,6 @@
 
     els.requestList.innerHTML = html;
 
-    // Attach click handlers
     els.requestList.querySelectorAll(".request-item").forEach((item) => {
       item.addEventListener("click", () => {
         const id = item.getAttribute("data-id");
@@ -306,7 +468,6 @@
   async function selectRequest(id) {
     selectedRequestId = id;
 
-    // Highlight selected item in list
     els.requestList.querySelectorAll(".request-item").forEach((item) => {
       if (item.getAttribute("data-id") === id) {
         item.classList.add("selected");
@@ -334,7 +495,6 @@
     els.detailEmpty.classList.add("hidden");
     els.detailContent.classList.remove("hidden");
 
-    // Overview Strip
     const method = (detail.method || "POST").toUpperCase();
     els.detailMethod.textContent = method;
     els.detailMethod.className = `method-tag method-${method.toLowerCase()}`;
@@ -345,19 +505,10 @@
       detail.body_raw ? new Blob([detail.body_raw]).size : 0
     );
 
-    // Payload tab
     renderPayload(detail);
-
-    // Headers tab
     renderHeaders(detail.headers || {});
-
-    // Query & Meta tab
     renderQueryAndMeta(detail);
-
-    // Replays tab
     renderReplays(detail.replays || []);
-
-    // Auto-detect signature in headers for Signature Inspector tab
     inspectSignatures(detail.headers || {});
   }
 
@@ -481,7 +632,6 @@
   }
 
   function inspectSignatures(headers) {
-    // Try finding known signature headers
     let foundSig = "";
     let detectedProvider = "generic";
 
@@ -517,7 +667,6 @@
       return;
     }
 
-    // Save to localStorage
     localStorage.setItem("hook_trap_replay_target", targetUrl);
 
     els.btnReplay.disabled = true;
@@ -602,6 +751,130 @@
     } catch (err) {
       alert("Signature verification request failed: " + err.message);
     }
+  }
+
+  // Sample Webhook Generator
+  function openSampleModal() {
+    const key = els.samplePresetSelect.value;
+    loadSamplePreset(key);
+    els.sampleModal.classList.remove("hidden");
+  }
+
+  function loadSamplePreset(key) {
+    const preset = SAMPLE_TEMPLATES[key] || SAMPLE_TEMPLATES["stripe-payment"];
+    els.sampleSubpathInput.value = preset.subpath || "";
+    els.sampleBodyEditor.value = JSON.stringify(preset.body, null, 2);
+  }
+
+  async function sendSampleWebhook() {
+    const key = els.samplePresetSelect.value;
+    const preset = SAMPLE_TEMPLATES[key] || {};
+    const subpath = els.sampleSubpathInput.value.trim();
+    const bodyStr = els.sampleBodyEditor.value.trim();
+
+    let targetUrl = `/catch/${channelId}`;
+    if (subpath) {
+      targetUrl += `/${subpath.replace(/^\/+/, "")}`;
+    }
+
+    const headers = {
+      "Content-Type": "application/json",
+      ...(preset.headers || {}),
+    };
+
+    els.btnSendSample.disabled = true;
+    els.btnSendSample.textContent = "Sending...";
+
+    try {
+      const res = await fetch(targetUrl, {
+        method: "POST",
+        headers: headers,
+        body: bodyStr,
+      });
+      if (res.ok) {
+        showFeedback("Sample webhook sent successfully", "success");
+        els.sampleModal.classList.add("hidden");
+      } else {
+        showFeedback("Failed sending sample webhook", "error");
+      }
+    } catch (err) {
+      showFeedback("Error sending sample: " + err.message, "error");
+    } finally {
+      els.btnSendSample.disabled = false;
+      els.btnSendSample.textContent = "Send to Channel";
+    }
+  }
+
+  // Payload Diff Viewer
+  async function openDiffModal() {
+    if (!currentDetail) return;
+
+    els.diffBaseInfo.textContent = `${currentDetail.method} ${currentDetail.path} (${currentDetail.id.slice(0, 8)})`;
+
+    // Populate compare dropdown with other requests
+    const otherRequests = requests.filter((r) => r.id !== currentDetail.id);
+    if (otherRequests.length === 0) {
+      alert("At least two captured requests are needed to perform a comparison.");
+      return;
+    }
+
+    els.diffCompareSelect.innerHTML = otherRequests
+      .map(
+        (r) =>
+          `<option value="${escapeHtml(r.id)}">${r.method} ${escapeHtml(r.path)} - ${formatTimestamp(
+            r.timestamp
+          )} (${r.id.slice(0, 8)})</option>`
+      )
+      .join("");
+
+    els.diffModal.classList.remove("hidden");
+    await renderDiffComparison(otherRequests[0].id);
+  }
+
+  async function renderDiffComparison(compareId) {
+    els.diffOutputContainer.innerHTML = `<div style="color: var(--text-muted); text-align: center;">Computing diff...</div>`;
+
+    try {
+      const res = await fetch(`/api/channels/${channelId}/requests/${compareId}`);
+      if (!res.ok) return;
+      const compareDetail = await res.json();
+
+      const baseText = JSON.stringify(currentDetail.body_json || currentDetail.body_raw || {}, null, 2);
+      const compareText = JSON.stringify(compareDetail.body_json || compareDetail.body_raw || {}, null, 2);
+
+      const diffHtml = computeSimpleDiff(baseText, compareText);
+      els.diffOutputContainer.innerHTML = diffHtml;
+    } catch (err) {
+      els.diffOutputContainer.innerHTML = `<div style="color: var(--color-danger);">Diff failed: ${escapeHtml(
+        err.message
+      )}</div>`;
+    }
+  }
+
+  function computeSimpleDiff(text1, text2) {
+    const lines1 = text1.split("\n");
+    const lines2 = text2.split("\n");
+
+    let html = "";
+    const maxLen = Math.max(lines1.length, lines2.length);
+
+    for (let i = 0; i < maxLen; i++) {
+      const l1 = lines1[i];
+      const l2 = lines2[i];
+
+      if (l1 === undefined) {
+        html += `<div class="diff-row diff-add"><span class="diff-sign">+</span>${escapeHtml(l2)}</div>`;
+      } else if (l2 === undefined) {
+        html += `<div class="diff-row diff-del"><span class="diff-sign">-</span>${escapeHtml(l1)}</div>`;
+      } else if (l1 === l2) {
+        html += `<div class="diff-row diff-same"><span class="diff-sign">&nbsp;</span>${escapeHtml(l1)}</div>`;
+      } else {
+        html += `<div class="diff-row diff-del"><span class="diff-sign">-</span>${escapeHtml(l1)}</div>`;
+        html += `<div class="diff-row diff-add"><span class="diff-sign">+</span>${escapeHtml(l2)}</div>`;
+      }
+    }
+
+    return html || `<div style="color: var(--text-muted);">Payloads are identical.</div>`;
   }
 
   // Clear Channel History
@@ -697,6 +970,73 @@ print(response.text)
     els.exportCodeBlock.textContent = code;
   }
 
+  // Keyboard navigation & shortcuts
+  function setupKeyboardShortcuts() {
+    document.addEventListener("keydown", (e) => {
+      // If typing inside an input, textarea, or select, ignore shortcut unless Escape
+      const activeTag = document.activeElement ? document.activeElement.tagName.toLowerCase() : "";
+      const isInputActive = ["input", "textarea", "select"].includes(activeTag);
+
+      if (e.key === "Escape") {
+        closeAllModals();
+        return;
+      }
+
+      if (isInputActive) {
+        return;
+      }
+
+      if (e.key === "j" || e.key === "ArrowDown") {
+        e.preventDefault();
+        selectNextRequest();
+      } else if (e.key === "k" || e.key === "ArrowUp") {
+        e.preventDefault();
+        selectPrevRequest();
+      } else if (e.key === "r") {
+        e.preventDefault();
+        triggerReplay();
+      } else if (e.key === "c") {
+        e.preventDefault();
+        els.btnCopyUrl.click();
+      } else if (e.key === "s") {
+        e.preventDefault();
+        openSampleModal();
+      } else if (e.key === "d") {
+        e.preventDefault();
+        openDiffModal();
+      } else if (e.key === "e") {
+        e.preventDefault();
+        openExportModal();
+      } else if (e.key === "/") {
+        e.preventDefault();
+        els.searchInput.focus();
+      } else if (e.key === "?") {
+        e.preventDefault();
+        els.shortcutsModal.classList.remove("hidden");
+      }
+    });
+  }
+
+  function selectNextRequest() {
+    if (requests.length === 0) return;
+    const currentIndex = requests.findIndex((r) => r.id === selectedRequestId);
+    if (currentIndex < requests.length - 1) {
+      selectRequest(requests[currentIndex + 1].id);
+    }
+  }
+
+  function selectPrevRequest() {
+    if (requests.length === 0) return;
+    const currentIndex = requests.findIndex((r) => r.id === selectedRequestId);
+    if (currentIndex > 0) {
+      selectRequest(requests[currentIndex - 1].id);
+    }
+  }
+
+  function closeAllModals() {
+    document.querySelectorAll(".modal-backdrop").forEach((m) => m.classList.add("hidden"));
+  }
+
   // Utilities
   function formatTimestamp(isoStr) {
     if (!isoStr) return "-";
@@ -774,15 +1114,22 @@ print(response.text)
       });
     });
 
+    // Public / Local URL Toggle
+    els.urlTypeToggle.addEventListener("click", () => {
+      isViewingPublicUrl = !isViewingPublicUrl;
+      updateIngestUrlDisplay();
+    });
+
     // New Channel
     els.btnNewChannel.addEventListener("click", () => {
       const randHex = Math.random().toString(16).substring(2, 10);
       window.location.href = `/c/${randHex}`;
     });
 
-    // Auto-forward save
+    // Auto-forward & retention save
     els.btnSaveAutoforward.addEventListener("click", saveChannelConfig);
     els.autoforwardToggle.addEventListener("change", saveChannelConfig);
+    els.retentionMaxInput.addEventListener("change", saveChannelConfig);
 
     // Search and filters
     els.searchInput.addEventListener("input", (e) => {
@@ -807,7 +1154,6 @@ print(response.text)
 
     // Code Export
     els.btnCodeExport.addEventListener("click", openExportModal);
-    els.btnCloseModal.addEventListener("click", () => els.exportModal.classList.add("hidden"));
     els.exportTabBtns.forEach((btn) => {
       btn.addEventListener("click", () => updateExportCode(btn.getAttribute("data-lang")));
     });
@@ -815,6 +1161,49 @@ print(response.text)
       navigator.clipboard.writeText(els.exportCodeBlock.textContent).then(() => {
         els.btnCopyExport.textContent = "Copied!";
         setTimeout(() => (els.btnCopyExport.textContent = "Copy Code"), 1500);
+      });
+    });
+
+    // Sample Webhook Generator
+    els.btnOpenSampleModal.addEventListener("click", openSampleModal);
+    els.btnEmptySample.addEventListener("click", openSampleModal);
+    els.samplePresetSelect.addEventListener("change", (e) => loadSamplePreset(e.target.value));
+    els.btnSendSample.addEventListener("click", sendSampleWebhook);
+
+    // Diff Comparison
+    els.btnOpenDiff.addEventListener("click", openDiffModal);
+    els.diffCompareSelect.addEventListener("change", (e) => renderDiffComparison(e.target.value));
+
+    // Collection Export Modal
+    els.btnOpenCollectionModal.addEventListener("click", () => els.collectionModal.classList.remove("hidden"));
+    els.btnDownloadPostman.addEventListener("click", () => {
+      window.location.href = `/api/channels/${channelId}/export?format=postman`;
+    });
+    els.btnDownloadBruno.addEventListener("click", () => {
+      window.location.href = `/api/channels/${channelId}/export?format=bruno`;
+    });
+    els.btnDownloadJson.addEventListener("click", () => {
+      window.location.href = `/api/channels/${channelId}/export?format=json`;
+    });
+
+    // Shortcuts Modal
+    els.btnShortcutsModal.addEventListener("click", () => els.shortcutsModal.classList.remove("hidden"));
+
+    // Generic Modal Close Buttons
+    document.querySelectorAll("[data-close]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const modalId = btn.getAttribute("data-close");
+        const modal = document.getElementById(modalId);
+        if (modal) modal.classList.add("hidden");
+      });
+    });
+
+    // Close modal on backdrop click
+    document.querySelectorAll(".modal-backdrop").forEach((backdrop) => {
+      backdrop.addEventListener("click", (e) => {
+        if (e.target === backdrop) {
+          backdrop.classList.add("hidden");
+        }
       });
     });
 
@@ -879,6 +1268,9 @@ print(response.text)
 
     // Signature Inspector button
     els.btnVerifySig.addEventListener("click", verifySignature);
+
+    // Keyboard shortcuts
+    setupKeyboardShortcuts();
   }
 
   // Initialization

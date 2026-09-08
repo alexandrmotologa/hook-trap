@@ -68,11 +68,18 @@ async def init_db(db_path: str) -> None:
                 channel_id TEXT PRIMARY KEY,
                 name TEXT,
                 auto_forward_url TEXT,
+                max_requests INTEGER DEFAULT 500,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
             );
             """
         )
+        async with db.execute("PRAGMA table_info(channels);") as cursor:
+            cols = [r[1] for r in await cursor.fetchall()]
+            if "max_requests" not in cols:
+                await db.execute(
+                    "ALTER TABLE channels ADD COLUMN max_requests INTEGER DEFAULT 500;"
+                )
         await db.commit()
 
 
@@ -291,17 +298,46 @@ async def get_replay_logs_for_request(db_path: str, request_id: str) -> list[dic
             return results
 
 
+async def prune_channel_requests(
+    db_path: str, channel_id: str, max_count: int = 500
+) -> int:
+    """Delete oldest requests for a channel if total count exceeds max_count."""
+    if max_count <= 0:
+        return 0
+    async with aiosqlite.connect(db_path) as db:
+        await db.execute("PRAGMA foreign_keys=ON;")
+        cursor = await db.execute(
+            """
+            DELETE FROM webhook_requests
+            WHERE channel_id = ? AND id NOT IN (
+                SELECT id FROM webhook_requests
+                WHERE channel_id = ?
+                ORDER BY timestamp DESC
+                LIMIT ?
+            );
+            """,
+            (channel_id, channel_id, max_count),
+        )
+        await db.commit()
+        return cursor.rowcount
+
+
 async def get_channel_config(db_path: str, channel_id: str) -> dict[str, Any] | None:
     """Retrieve persisted channel configuration."""
     async with aiosqlite.connect(db_path) as db:
         db.row_factory = aiosqlite.Row
         query = (
-            "SELECT channel_id, name, auto_forward_url, created_at, updated_at "
+            "SELECT channel_id, name, auto_forward_url, max_requests, created_at, updated_at "
             "FROM channels WHERE channel_id = ?;"
         )
         async with db.execute(query, (channel_id,)) as cursor:
             row = await cursor.fetchone()
-            return dict(row) if row else None
+            if not row:
+                return None
+            data = dict(row)
+            if data.get("max_requests") is None:
+                data["max_requests"] = 500
+            return data
 
 
 async def upsert_channel_config(
@@ -309,13 +345,14 @@ async def upsert_channel_config(
     channel_id: str,
     name: str | None = None,
     auto_forward_url: str | None = None,
+    max_requests: int | None = None,
 ) -> dict[str, Any]:
     """Create or update channel configuration."""
     now = _utc_now_iso()
     async with aiosqlite.connect(db_path) as db:
         db.row_factory = aiosqlite.Row
         sel_query = (
-            "SELECT channel_id, name, auto_forward_url, created_at "
+            "SELECT channel_id, name, auto_forward_url, max_requests, created_at "
             "FROM channels WHERE channel_id = ?;"
         )
         async with db.execute(sel_query, (channel_id,)) as cursor:
@@ -326,25 +363,32 @@ async def upsert_channel_config(
             new_auto_forward = (
                 auto_forward_url if auto_forward_url is not None else existing["auto_forward_url"]
             )
+            new_max_req = (
+                max_requests
+                if max_requests is not None
+                else (existing["max_requests"] or 500)
+            )
             await db.execute(
                 """
                 UPDATE channels
-                SET name = ?, auto_forward_url = ?, updated_at = ?
+                SET name = ?, auto_forward_url = ?, max_requests = ?, updated_at = ?
                 WHERE channel_id = ?;
                 """,
-                (new_name, new_auto_forward, now, channel_id),
+                (new_name, new_auto_forward, new_max_req, now, channel_id),
             )
             created_at = existing["created_at"]
         else:
             new_name = name
             new_auto_forward = auto_forward_url
+            new_max_req = max_requests if max_requests is not None else 500
             created_at = now
             await db.execute(
                 """
-                INSERT INTO channels (channel_id, name, auto_forward_url, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?);
+                INSERT INTO channels (
+                    channel_id, name, auto_forward_url, max_requests, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?);
                 """,
-                (channel_id, new_name, new_auto_forward, created_at, now),
+                (channel_id, new_name, new_auto_forward, new_max_req, created_at, now),
             )
         await db.commit()
 
@@ -352,6 +396,42 @@ async def upsert_channel_config(
         "channel_id": channel_id,
         "name": new_name,
         "auto_forward_url": new_auto_forward,
+        "max_requests": new_max_req,
         "created_at": created_at,
         "updated_at": now,
     }
+
+
+async def get_all_channel_requests_for_export(
+    db_path: str, channel_id: str
+) -> list[dict[str, Any]]:
+    """Retrieve all requests for a channel with parsed details for export."""
+    async with aiosqlite.connect(db_path) as db:
+        db.row_factory = aiosqlite.Row
+        query = """
+            SELECT id, channel_id, timestamp, method, path, query_params,
+                   headers, body_raw, body_json, content_type, client_ip, replay_count
+            FROM webhook_requests
+            WHERE channel_id = ?
+            ORDER BY timestamp ASC;
+        """
+        async with db.execute(query, (channel_id,)) as cursor:
+            rows = await cursor.fetchall()
+            results = []
+            for r in rows:
+                item = dict(r)
+                try:
+                    item["query_params"] = json.loads(item["query_params"] or "{}")
+                except (json.JSONDecodeError, TypeError):
+                    item["query_params"] = {}
+                try:
+                    item["headers"] = json.loads(item["headers"] or "{}")
+                except (json.JSONDecodeError, TypeError):
+                    item["headers"] = {}
+                if item["body_json"]:
+                    try:
+                        item["body_json"] = json.loads(item["body_json"])
+                    except (json.JSONDecodeError, TypeError):
+                        pass
+                results.append(item)
+            return results

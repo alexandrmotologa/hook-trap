@@ -15,12 +15,25 @@
         <span class="brand-logo">🪝</span>
         <span class="brand-title">hook-trap</span>
         <span class="brand-tagline">Real-Time Webhook Inspector</span>
+        <div id="tunnel-badge" class="tunnel-badge hidden" title="Public HTTPS Tunnel Active">
+          <span class="tunnel-dot"></span>
+          <span id="tunnel-url-text">Tunnel Active</span>
+        </div>
       </div>
       <div class="nav-right">
         <div id="ws-status" class="status-indicator disconnected">
           <span class="status-dot"></span>
           <span id="ws-status-text">Connecting...</span>
         </div>
+        <button id="btn-open-sample-modal" class="btn btn-primary btn-sm" title="Send a simulated Stripe, GitHub, or Shopify webhook">
+          ⚡ Send Sample
+        </button>
+        <button id="btn-open-collection-modal" class="btn btn-secondary btn-sm" title="Export channel as Postman or Bruno collection">
+          Export Collection
+        </button>
+        <button id="btn-shortcuts-modal" class="btn btn-ghost btn-sm" title="Keyboard Shortcuts (?)">
+          Keys [?]
+        </button>
         <button id="btn-new-channel" class="btn btn-secondary btn-sm" title="Open a new isolated channel">
           + New Channel
         </button>
@@ -38,16 +51,19 @@
         <div class="card channel-banner">
           <div class="channel-header">
             <span class="channel-label">INGESTION URL</span>
-            <span id="channel-badge" class="channel-badge">channel</span>
+            <div class="channel-header-right">
+              <span id="url-type-toggle" class="url-type-toggle hidden">Public URL</span>
+              <span id="channel-badge" class="channel-badge">channel</span>
+            </div>
           </div>
           <div class="copy-input-group">
             <input type="text" id="ingest-url-input" readonly spellcheck="false">
-            <button id="btn-copy-url" class="btn btn-primary btn-sm">Copy</button>
+            <button id="btn-copy-url" class="btn btn-primary btn-sm" title="Press 'c' to copy">Copy</button>
           </div>
-          <div class="banner-hint">Accepts POST, GET, PUT, PATCH, DELETE and custom paths.</div>
+          <div class="banner-hint">Accepts POST, GET, PUT, PATCH, DELETE and custom subpaths.</div>
         </div>
 
-        <!-- Auto-Forward Target Settings -->
+        <!-- Auto-Forward Target & Retention Settings -->
         <div class="card autoforward-card">
           <div class="card-title-row">
             <span class="card-title">Auto-Forward Target</span>
@@ -60,11 +76,16 @@
             <input type="url" id="autoforward-url" placeholder="http://localhost:3000/api/webhook" spellcheck="false">
             <button id="btn-save-autoforward" class="btn btn-secondary btn-sm">Save</button>
           </div>
+          <div class="retention-row">
+            <span class="retention-label">Channel Retention:</span>
+            <input type="number" id="retention-max-input" min="10" max="5000" step="50" value="500" class="retention-input" title="Max requests kept in database before auto-pruning">
+            <span class="retention-hint">max requests</span>
+          </div>
         </div>
 
         <!-- Filter & Search Controls -->
         <div class="filter-bar">
-          <input type="text" id="search-input" class="search-input" placeholder="Search method, path, headers, body...">
+          <input type="text" id="search-input" class="search-input" placeholder="Search (press '/' to focus)...">
           <div class="method-filters">
             <button class="filter-pill active" data-method="ALL">ALL</button>
             <button class="filter-pill" data-method="POST">POST</button>
@@ -83,7 +104,7 @@
           <div class="empty-state">
             <div class="empty-icon">📡</div>
             <div class="empty-title">Waiting for webhooks...</div>
-            <div class="empty-desc">Send an HTTP request to the ingestion URL above.</div>
+            <div class="empty-desc">Send an HTTP request or click "⚡ Send Sample" above.</div>
           </div>
         </div>
       </aside>
@@ -95,7 +116,10 @@
           <div class="empty-placeholder">
             <div class="placeholder-icon">🔍</div>
             <h2>No Webhook Selected</h2>
-            <p>Select a webhook from the left list or send a new request to inspect headers, raw body, signatures, and run replays.</p>
+            <p>Select a webhook from the left list or send a sample request to inspect headers, raw body, signatures, and run replays.</p>
+            <div style="margin-top: 16px;">
+              <button id="btn-empty-sample" class="btn btn-primary">Send Test Webhook</button>
+            </div>
           </div>
         </div>
 
@@ -106,10 +130,13 @@
             <div class="replay-input-group">
               <span class="replay-label">Target URL:</span>
               <input type="url" id="replay-target-input" placeholder="http://localhost:3000/api/webhook" spellcheck="false">
-              <button id="btn-replay" class="btn btn-replay">
+              <button id="btn-replay" class="btn btn-replay" title="Press 'r' to replay">
                 <span id="replay-btn-text">⚡ Replay</span>
               </button>
-              <button id="btn-code-export" class="btn btn-secondary">
+              <button id="btn-open-diff" class="btn btn-secondary" title="Compare with another webhook payload (Press 'd')">
+                Diff
+              </button>
+              <button id="btn-code-export" class="btn btn-secondary" title="Export as cURL or code snippet (Press 'e')">
                 Export Code
               </button>
             </div>
@@ -243,7 +270,7 @@
     <div class="modal-card">
       <div class="modal-header">
         <h3>Export Request Code</h3>
-        <button id="btn-close-modal" class="btn-close">&times;</button>
+        <button class="btn-close" data-close="export-modal">&times;</button>
       </div>
       <div class="modal-tabs">
         <button class="export-tab-btn active" data-lang="curl">cURL</button>
@@ -255,6 +282,119 @@
       </div>
       <div class="modal-footer">
         <button id="btn-copy-export" class="btn btn-primary btn-sm">Copy Code</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Sample Webhook Generator Modal -->
+  <div id="sample-modal" class="modal-backdrop hidden">
+    <div class="modal-card modal-lg">
+      <div class="modal-header">
+        <h3>⚡ Send Sample Webhook</h3>
+        <button class="btn-close" data-close="sample-modal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label for="sample-preset-select">Provider Template:</label>
+          <select id="sample-preset-select" class="form-select">
+            <option value="stripe-payment">Stripe: payment_intent.succeeded</option>
+            <option value="stripe-checkout">Stripe: checkout.session.completed</option>
+            <option value="github-push">GitHub: push event</option>
+            <option value="github-pr">GitHub: pull_request.opened</option>
+            <option value="shopify-order">Shopify: orders/create</option>
+            <option value="custom">Custom Webhook</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="sample-subpath-input">Subpath (optional):</label>
+          <input type="text" id="sample-subpath-input" class="form-input" value="v1/events" placeholder="e.g. v1/events">
+        </div>
+        <div class="form-group">
+          <label for="sample-body-editor">JSON Payload:</label>
+          <textarea id="sample-body-editor" class="form-textarea" rows="10" spellcheck="false"></textarea>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button id="btn-send-sample" class="btn btn-primary">Send to Channel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Payload Diff Comparison Modal -->
+  <div id="diff-modal" class="modal-backdrop hidden">
+    <div class="modal-card modal-xl">
+      <div class="modal-header">
+        <h3>🔍 Compare Webhook Payloads</h3>
+        <button class="btn-close" data-close="diff-modal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="diff-control-row">
+          <div class="diff-picker-col">
+            <span class="diff-picker-label">Base (Current):</span>
+            <span id="diff-base-info" class="diff-picker-tag">Selected Request</span>
+          </div>
+          <div class="diff-picker-col">
+            <label for="diff-compare-select" class="diff-picker-label">Compare With:</label>
+            <select id="diff-compare-select" class="form-select"></select>
+          </div>
+        </div>
+        <div id="diff-output-container" class="diff-output-container"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Collection Export Modal -->
+  <div id="collection-modal" class="modal-backdrop hidden">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3>Export Channel Collection</h3>
+        <button class="btn-close" data-close="collection-modal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p class="hint-text" style="margin-bottom: 16px;">
+          Download all webhooks captured in this channel as a collection file ready for import into your favorite API client.
+        </p>
+        <div class="export-options-grid">
+          <div class="export-option-card" id="export-postman-card">
+            <h4>Postman Collection v2.1</h4>
+            <p>Formatted requests with headers, URLs, and JSON bodies.</p>
+            <button id="btn-download-postman" class="btn btn-primary btn-sm">Download Postman</button>
+          </div>
+          <div class="export-option-card" id="export-bruno-card">
+            <h4>Bruno Collection</h4>
+            <p>Git-friendly collection format for the Bruno API client.</p>
+            <button id="btn-download-bruno" class="btn btn-secondary btn-sm">Download Bruno</button>
+          </div>
+          <div class="export-option-card" id="export-json-card">
+            <h4>Full JSON Dump</h4>
+            <p>Complete raw SQLite records including replay logs.</p>
+            <button id="btn-download-json" class="btn btn-secondary btn-sm">Download JSON</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Keyboard Shortcuts Cheat Sheet Modal -->
+  <div id="shortcuts-modal" class="modal-backdrop hidden">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3>Keyboard Shortcuts</h3>
+        <button class="btn-close" data-close="shortcuts-modal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <table class="shortcuts-table">
+          <tr><td><kbd>j</kbd> / <kbd>&darr;</kbd></td><td>Next request in list</td></tr>
+          <tr><td><kbd>k</kbd> / <kbd>&uarr;</kbd></td><td>Previous request in list</td></tr>
+          <tr><td><kbd>r</kbd></td><td>Replay selected request</td></tr>
+          <tr><td><kbd>c</kbd></td><td>Copy ingestion URL</td></tr>
+          <tr><td><kbd>d</kbd></td><td>Open payload Diff comparison</td></tr>
+          <tr><td><kbd>s</kbd></td><td>Open Send Sample Webhook modal</td></tr>
+          <tr><td><kbd>e</kbd></td><td>Open Code Export modal (cURL, Python, JS)</td></tr>
+          <tr><td><kbd>/</kbd></td><td>Focus search input bar</td></tr>
+          <tr><td><kbd>?</kbd></td><td>Show this shortcuts help dialog</td></tr>
+          <tr><td><kbd>Esc</kbd></td><td>Close any open modal</td></tr>
+        </table>
       </div>
     </div>
   </div>
