@@ -1,6 +1,26 @@
+from enum import StrEnum
 from typing import Any
 
 from pydantic import BaseModel, Field
+
+
+class ExportFormat(StrEnum):
+    """Supported collection export formats."""
+
+    POSTMAN = "postman"
+    BRUNO = "bruno"
+    JSON = "json"
+
+
+class SignatureProvider(StrEnum):
+    """Supported signature verification providers."""
+
+    STRIPE = "stripe"
+    GITHUB = "github"
+    SHOPIFY = "shopify"
+    SVIX = "svix"
+    GENERIC_SHA256 = "generic_sha256"
+    GENERIC_SHA1 = "generic_sha1"
 
 
 class WebhookRequestSummary(BaseModel):
@@ -75,17 +95,17 @@ class ChannelConfigUpdate(BaseModel):
 
 
 class SignatureVerifyRequest(BaseModel):
-    """Verification payload for common webhook HMAC signatures."""
+    """Verification payload for webhook HMAC signatures."""
 
-    provider: str  # "stripe", "github", "shopify", "svix", "generic_sha256", "generic_sha1"
+    provider: str
     secret: str
     signature_header: str
     raw_payload: str
-    timestamp: str | None = None  # Needed for stripe (t=...) or svix (webhook-timestamp)
+    timestamp: str | None = None
 
 
 class SignatureVerifyResponse(BaseModel):
-    """Verification result."""
+    """Verification result with matched status and diagnostic details."""
 
     valid: bool
     message: str

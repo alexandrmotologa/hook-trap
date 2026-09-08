@@ -30,6 +30,98 @@ cli = typer.Typer(
 console = Console()
 
 
+class CliRenderer:
+    """Handles formatted terminal outputs, banners, and real-time streaming displays."""
+
+    def __init__(self, console_instance: Console | None = None) -> None:
+        self.console = console_instance or console
+        self._method_styles = {
+            "POST": "bold green",
+            "GET": "bold blue",
+            "PUT": "bold yellow",
+            "PATCH": "bold yellow",
+            "DELETE": "bold red",
+        }
+
+    def print_banner(
+        self,
+        host: str,
+        port: int,
+        db_path: str,
+        auto_forward: str | None,
+        tunnel_url: str | None = None,
+    ) -> None:
+        """Render startup dashboard info using Rich."""
+        title = Text("HOOK-TRAP", style="bold cyan")
+
+        grid = Table.grid(padding=(0, 2))
+        grid.add_column(style="bold white", justify="right")
+        grid.add_column(style="green")
+
+        grid.add_row("Dashboard UI:", f"http://{host}:{port}/")
+        grid.add_row("Webhook Ingestion:", f"http://{host}:{port}/catch/<channel_id>")
+        if tunnel_url:
+            grid.add_row("Public Tunnel:", f"{tunnel_url}/catch/<channel_id>")
+        grid.add_row("SQLite Database:", db_path)
+        grid.add_row(
+            "Auto-Forward Target:", auto_forward if auto_forward else "[dim]Disabled[/dim]"
+        )
+
+        panel = Panel(
+            grid,
+            title=title,
+            subtitle="[dim]Press CTRL+C to stop the server[/dim]",
+            border_style="cyan",
+            padding=(1, 2),
+        )
+        self.console.print(panel)
+
+    def render_tail_request(self, req: dict[str, Any], show_headers: bool = False) -> None:
+        """Render captured request summary in the live tail CLI output."""
+        method = (req.get("method") or "POST").upper()
+        method_style = self._method_styles.get(method, "bold white")
+        path = req.get("path", "")
+        ts = req.get("timestamp", "")[:19]
+        size = req.get("body_size", 0)
+        ip = req.get("client_ip", "127.0.0.1")
+
+        self.console.print(
+            f"[{method_style}]{method}[/{method_style}] [bold white]{path}[/bold white] "
+            f"[dim]{size} B &bull; {ip} &bull; {ts}[/dim]"
+        )
+
+        if show_headers and req.get("headers"):
+            tbl = Table(title="Headers", show_header=True, header_style="bold dim", padding=(0, 1))
+            tbl.add_column("Header")
+            tbl.add_column("Value")
+            for k, v in req["headers"].items():
+                tbl.add_row(k, v)
+            self.console.print(tbl)
+
+        body = req.get("body")
+        if body:
+            if isinstance(body, (dict, list)):
+                json_str = json.dumps(body, indent=2)
+                self.console.print(Syntax(json_str, "json", theme="monokai", line_numbers=False))
+            else:
+                self.console.print(f"[dim]{str(body)[:500]}[/dim]")
+        self.console.print()
+
+    def render_replay_event(self, rep: dict[str, Any]) -> None:
+        """Render replay execution result in terminal."""
+        status = rep.get("status_code", "ERR")
+        lat = rep.get("latency_ms", 0)
+        target = rep.get("target_url", "")
+        self.console.print(
+            f"  [bold magenta]↳ REPLAY[/bold magenta] [cyan]{target}[/cyan] "
+            f"[bold green]{status} OK[/bold green] ({lat} ms)\n"
+        )
+
+
+renderer = CliRenderer(console)
+
+
+# Keep module-level backward compatibility for print_banner and _render_tail_request
 def print_banner(
     host: str,
     port: int,
@@ -37,28 +129,11 @@ def print_banner(
     auto_forward: str | None,
     tunnel_url: str | None = None,
 ) -> None:
-    """Render startup dashboard info using Rich."""
-    title = Text("HOOK-TRAP", style="bold cyan")
+    renderer.print_banner(host, port, db_path, auto_forward, tunnel_url)
 
-    grid = Table.grid(padding=(0, 2))
-    grid.add_column(style="bold white", justify="right")
-    grid.add_column(style="green")
 
-    grid.add_row("Dashboard UI:", f"http://{host}:{port}/")
-    grid.add_row("Webhook Ingestion:", f"http://{host}:{port}/catch/<channel_id>")
-    if tunnel_url:
-        grid.add_row("Public Tunnel:", f"{tunnel_url}/catch/<channel_id>")
-    grid.add_row("SQLite Database:", db_path)
-    grid.add_row("Auto-Forward Target:", auto_forward if auto_forward else "[dim]Disabled[/dim]")
-
-    panel = Panel(
-        grid,
-        title=title,
-        subtitle="[dim]Press CTRL+C to stop the server[/dim]",
-        border_style="cyan",
-        padding=(1, 2),
-    )
-    console.print(panel)
+def _render_tail_request(req: dict[str, Any], show_headers: bool = False) -> None:
+    renderer.render_tail_request(req, show_headers=show_headers)
 
 
 @cli.command(name="serve")
@@ -98,7 +173,7 @@ def serve(
                 "[yellow]Could not establish public tunnel. Falling back to local.[/yellow]"
             )
 
-    print_banner(
+    renderer.print_banner(
         host=host,
         port=port,
         db_path=db_path,
@@ -142,7 +217,7 @@ def tail(
     console.print(f"[bold cyan]Connecting to live stream on {ws_url}...[/bold cyan]")
     console.print("[dim]Listening for incoming webhooks. Press CTRL+C to exit.[/dim]\n")
 
-    async def run_tail():
+    async def run_tail() -> None:
         try:
             async with websockets.connect(ws_url) as ws:
                 while True:
@@ -163,16 +238,10 @@ def tail(
                         )
                     elif event == "new_request":
                         req = data.get("data", {})
-                        _render_tail_request(req, show_headers=show_headers)
+                        renderer.render_tail_request(req, show_headers=show_headers)
                     elif event == "replay_executed":
                         rep = data.get("data", {})
-                        status = rep.get("status_code", "ERR")
-                        lat = rep.get("latency_ms", 0)
-                        target = rep.get("target_url", "")
-                        console.print(
-                            f"  [bold magenta]↳ REPLAY[/bold magenta] [cyan]{target}[/cyan] "
-                            f"[bold green]{status} OK[/bold green] ({lat} ms)\n"
-                        )
+                        renderer.render_replay_event(rep)
                     elif event == "ping":
                         await ws.send("pong")
         except KeyboardInterrupt:
@@ -184,44 +253,6 @@ def tail(
         asyncio.run(run_tail())
     except KeyboardInterrupt:
         pass
-
-
-def _render_tail_request(req: dict[str, Any], show_headers: bool = False) -> None:
-    method = (req.get("method") or "POST").upper()
-    method_styles = {
-        "POST": "bold green",
-        "GET": "bold blue",
-        "PUT": "bold yellow",
-        "PATCH": "bold yellow",
-        "DELETE": "bold red",
-    }
-    method_style = method_styles.get(method, "bold white")
-    path = req.get("path", "")
-    ts = req.get("timestamp", "")[:19]
-    size = req.get("body_size", 0)
-    ip = req.get("client_ip", "127.0.0.1")
-
-    console.print(
-        f"[{method_style}]{method}[/{method_style}] [bold white]{path}[/bold white] "
-        f"[dim]{size} B &bull; {ip} &bull; {ts}[/dim]"
-    )
-
-    if show_headers and req.get("headers"):
-        tbl = Table(title="Headers", show_header=True, header_style="bold dim", padding=(0, 1))
-        tbl.add_column("Header")
-        tbl.add_column("Value")
-        for k, v in req["headers"].items():
-            tbl.add_row(k, v)
-        console.print(tbl)
-
-    body = req.get("body")
-    if body:
-        if isinstance(body, (dict, list)):
-            json_str = json.dumps(body, indent=2)
-            console.print(Syntax(json_str, "json", theme="monokai", line_numbers=False))
-        else:
-            console.print(f"[dim]{str(body)[:500]}[/dim]")
-    console.print()
 
 
 @cli.callback(invoke_without_command=True)

@@ -1,11 +1,7 @@
-import hashlib
-import hmac
 import logging
-import uuid
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query, Response
-from fastapi.responses import JSONResponse
 
 from hook_trap.config import settings
 from hook_trap.database import (
@@ -24,6 +20,8 @@ from hook_trap.models import (
     SignatureVerifyRequest,
     SignatureVerifyResponse,
 )
+from hook_trap.services.export import export_service
+from hook_trap.services.signatures import signature_verification_service
 
 logger = logging.getLogger("hook_trap.api")
 
@@ -137,106 +135,13 @@ async def export_channel_collection(
 ) -> Response:
     """Export captured webhooks as a Postman Collection v2.1, Bruno, or JSON dump."""
     requests = await get_all_channel_requests_for_export(settings.db_path, channel_id)
-
-    if format == "postman":
-        items = []
-        for req in requests:
-            headers_list = [
-                {"key": k, "value": v, "type": "text"}
-                for k, v in req.get("headers", {}).items()
-                if k.lower() not in ("host", "content-length")
-            ]
-            body_raw = req.get("body_raw", "")
-            path_clean = req.get("path", "").lstrip("/")
-            path_segments = path_clean.split("/") if path_clean else []
-
-            is_json = req.get("body_json") is not None
-            body_obj = {
-                "mode": "raw",
-                "raw": body_raw,
-                "options": {"raw": {"language": "json" if is_json else "text"}},
-            }
-
-            items.append(
-                {
-                    "name": f"{req['method']} {req['path']} ({req['timestamp'][:19]})",
-                    "request": {
-                        "method": req["method"],
-                        "header": headers_list,
-                        "body": body_obj,
-                        "url": {
-                            "raw": "{{base_url}}" + req["path"],
-                            "host": ["{{base_url}}"],
-                            "path": path_segments,
-                        },
-                    },
-                    "response": [],
-                }
-            )
-
-        collection = {
-            "info": {
-                "_postman_id": str(uuid.uuid4()),
-                "name": f"hook-trap - {channel_id}",
-                "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
-            },
-            "item": items,
-            "variable": [
-                {
-                    "key": "base_url",
-                    "value": f"http://{settings.host}:{settings.port}",
-                    "type": "string",
-                }
-            ],
-        }
-        return JSONResponse(
-            content=collection,
-            headers={
-                "Content-Disposition": f'attachment; filename="hook-trap-{channel_id}-postman.json"'
-            },
-        )
-
-    elif format == "bruno":
-        # Bruno JSON collection representation
-        items = []
-        for req in requests:
-            headers_dict = {
-                k: v
-                for k, v in req.get("headers", {}).items()
-                if k.lower() not in ("host", "content-length")
-            }
-            items.append(
-                {
-                    "name": f"{req['method']}_{req['id'][:8]}",
-                    "request": {
-                        "method": req["method"],
-                        "url": f"http://{settings.host}:{settings.port}{req['path']}",
-                        "headers": headers_dict,
-                        "body": req.get("body_raw", ""),
-                    },
-                }
-            )
-        bruno_data = {
-            "version": "1",
-            "name": f"hook-trap-{channel_id}",
-            "type": "collection",
-            "items": items,
-        }
-        return JSONResponse(
-            content=bruno_data,
-            headers={
-                "Content-Disposition": f'attachment; filename="hook-trap-{channel_id}-bruno.json"'
-            },
-        )
-
-    else:
-        # Standard JSON array dump
-        return JSONResponse(
-            content=requests,
-            headers={
-                "Content-Disposition": f'attachment; filename="hook-trap-{channel_id}.json"'
-            },
-        )
+    base_url = f"http://{settings.host}:{settings.port}"
+    return export_service.export(
+        format_name=format,
+        channel_id=channel_id,
+        requests=requests,
+        base_url=base_url,
+    )
 
 
 @router.get("/system/status")
@@ -256,78 +161,4 @@ async def verify_signature(req: SignatureVerifyRequest) -> SignatureVerifyRespon
     Test and verify webhook HMAC signatures against raw payload.
     Supports Stripe, GitHub, Shopify, Svix, and generic HMAC-SHA256/SHA1.
     """
-    provider = req.provider.lower().strip()
-    secret_bytes = req.secret.encode("utf-8")
-    payload_bytes = req.raw_payload.encode("utf-8")
-    sig_header = req.signature_header.strip()
-
-    if provider == "stripe":
-        # Format: t=1614000000,v1=abc...,v0=...
-        parts = {}
-        for item in sig_header.split(","):
-            if "=" in item:
-                k, v = item.split("=", 1)
-                parts.setdefault(k.strip(), []).append(v.strip())
-
-        timestamps = parts.get("t", [])
-        v1_signatures = parts.get("v1", [])
-        if not timestamps or not v1_signatures:
-            return SignatureVerifyResponse(
-                valid=False,
-                message="Missing t= or v1= parts in Stripe-Signature header",
-                details={"parsed_parts": str(list(parts.keys()))},
-            )
-
-        ts = req.timestamp or timestamps[0]
-        signed_payload = f"{ts}.".encode() + payload_bytes
-        expected = hmac.new(secret_bytes, signed_payload, hashlib.sha256).hexdigest()
-
-        matched = any(hmac.compare_digest(expected, s) for s in v1_signatures)
-        return SignatureVerifyResponse(
-            valid=matched,
-            message="Stripe signature matched" if matched else "Stripe signature mismatch",
-            details={"computed": expected, "provided": ", ".join(v1_signatures), "timestamp": ts},
-        )
-
-    elif provider == "github":
-        # Format: sha256=abc... or sha1=...
-        hash_func = hashlib.sha256
-        prefix = "sha256="
-        if sig_header.startswith("sha1="):
-            hash_func = hashlib.sha1
-            prefix = "sha1="
-
-        provided_sig = sig_header.removeprefix(prefix)
-        expected = hmac.new(secret_bytes, payload_bytes, hash_func).hexdigest()
-        matched = hmac.compare_digest(expected, provided_sig)
-        return SignatureVerifyResponse(
-            valid=matched,
-            message="GitHub signature matched" if matched else "GitHub signature mismatch",
-            details={"computed": f"{prefix}{expected}", "provided": sig_header},
-        )
-
-    elif provider == "shopify":
-        # Base64 encoded SHA256 HMAC
-        import base64
-
-        expected = base64.b64encode(
-            hmac.new(secret_bytes, payload_bytes, hashlib.sha256).digest()
-        ).decode("utf-8")
-        matched = hmac.compare_digest(expected, sig_header)
-        return SignatureVerifyResponse(
-            valid=matched,
-            message="Shopify signature matched" if matched else "Shopify signature mismatch",
-            details={"computed": expected, "provided": sig_header},
-        )
-
-    else:
-        # Generic SHA256 hex
-        expected = hmac.new(secret_bytes, payload_bytes, hashlib.sha256).hexdigest()
-        clean_sig = sig_header.lower()
-        clean_sig = clean_sig.removeprefix("sha256=")
-        matched = hmac.compare_digest(expected, clean_sig)
-        return SignatureVerifyResponse(
-            valid=matched,
-            message="HMAC-SHA256 signature matched" if matched else "Signature mismatch",
-            details={"computed": expected, "provided": clean_sig},
-        )
+    return signature_verification_service.verify(req)

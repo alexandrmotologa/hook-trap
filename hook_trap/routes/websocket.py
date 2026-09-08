@@ -17,9 +17,7 @@ async def channel_websocket(websocket: WebSocket, channel_id: str) -> None:
     await ws_manager.connect(channel_id, websocket)
     try:
         # Initial greeting
-        await websocket.send_text(
-            json.dumps({"event": "connected", "channel_id": channel_id})
-        )
+        await websocket.send_text(json.dumps({"event": "connected", "channel_id": channel_id}))
 
         while True:
             # Wait for client messages or keepalive pings with timeout
@@ -32,7 +30,8 @@ async def channel_websocket(websocket: WebSocket, channel_id: str) -> None:
                 # Server-initiated heartbeat ping
                 await websocket.send_text(json.dumps({"event": "ping"}))
     except WebSocketDisconnect:
-        await ws_manager.disconnect(channel_id, websocket)
+        pass
     except Exception as exc:
         logger.debug("WebSocket error on channel %s: %s", channel_id, exc)
+    finally:
         await ws_manager.disconnect(channel_id, websocket)

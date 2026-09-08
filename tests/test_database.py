@@ -27,9 +27,10 @@ async def temp_db(tmp_path):
 
 @pytest.mark.asyncio
 async def test_init_db_and_tables(temp_db):
-    async with aiosqlite.connect(temp_db) as db, db.execute(
-        "SELECT name FROM sqlite_master WHERE type='table';"
-    ) as cursor:
+    async with (
+        aiosqlite.connect(temp_db) as db,
+        db.execute("SELECT name FROM sqlite_master WHERE type='table';") as cursor,
+    ):
         tables = [row[0] for row in await cursor.fetchall()]
         assert "webhook_requests" in tables
         assert "replay_logs" in tables
@@ -84,9 +85,7 @@ async def test_filter_and_search(temp_db):
     assert all(p["method"] == "POST" for p in posts)
 
     # Search
-    search_res, search_cnt = await get_webhook_requests(
-        temp_db, "test_filter", search="item-3"
-    )
+    search_res, search_cnt = await get_webhook_requests(temp_db, "test_filter", search="item-3")
     assert search_cnt == 1
     assert search_res[0]["path"] == "/catch/test_filter/item-3"
 

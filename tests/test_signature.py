@@ -24,9 +24,7 @@ async def test_stripe_signature_verification(app_client):
     payload = '{"event": "charge.succeeded"}'
     ts = "1620000000"
     signed_payload = f"{ts}.".encode() + payload.encode("utf-8")
-    expected_sig = hmac.new(
-        secret.encode("utf-8"), signed_payload, hashlib.sha256
-    ).hexdigest()
+    expected_sig = hmac.new(secret.encode("utf-8"), signed_payload, hashlib.sha256).hexdigest()
 
     header = f"t={ts},v1={expected_sig}"
 
