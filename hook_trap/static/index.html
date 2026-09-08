@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>hook-trap - Webhook Inspector</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🪝</text></svg>">
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <div id="app" class="app-container">
+    <!-- Top Navigation Bar -->
+    <header class="top-nav">
+      <div class="nav-left">
+        <span class="brand-logo">🪝</span>
+        <span class="brand-title">hook-trap</span>
+        <span class="brand-tagline">Real-Time Webhook Inspector</span>
+      </div>
+      <div class="nav-right">
+        <div id="ws-status" class="status-indicator disconnected">
+          <span class="status-dot"></span>
+          <span id="ws-status-text">Connecting...</span>
+        </div>
+        <button id="btn-new-channel" class="btn btn-secondary btn-sm" title="Open a new isolated channel">
+          + New Channel
+        </button>
+        <a href="https://github.com/alexandrmotologa/hook-trap" target="_blank" rel="noreferrer" class="btn btn-ghost btn-sm" title="View Source on GitHub">
+          GitHub
+        </a>
+      </div>
+    </header>
+
+    <!-- Main Content Workspace -->
+    <div class="workspace-grid">
+      <!-- Left Sidebar: Channel info, Controls, Request List -->
+      <aside class="sidebar-pane">
+        <!-- Ingestion URL Banner -->
+        <div class="card channel-banner">
+          <div class="channel-header">
+            <span class="channel-label">INGESTION URL</span>
+            <span id="channel-badge" class="channel-badge">channel</span>
+          </div>
+          <div class="copy-input-group">
+            <input type="text" id="ingest-url-input" readonly spellcheck="false">
+            <button id="btn-copy-url" class="btn btn-primary btn-sm">Copy</button>
+          </div>
+          <div class="banner-hint">Accepts POST, GET, PUT, PATCH, DELETE and custom paths.</div>
+        </div>
+
+        <!-- Auto-Forward Target Settings -->
+        <div class="card autoforward-card">
+          <div class="card-title-row">
+            <span class="card-title">Auto-Forward Target</span>
+            <label class="toggle-switch">
+              <input type="checkbox" id="autoforward-toggle">
+              <span class="slider"></span>
+            </label>
+          </div>
+          <div class="input-with-action">
+            <input type="url" id="autoforward-url" placeholder="http://localhost:3000/api/webhook" spellcheck="false">
+            <button id="btn-save-autoforward" class="btn btn-secondary btn-sm">Save</button>
+          </div>
+        </div>
+
+        <!-- Filter & Search Controls -->
+        <div class="filter-bar">
+          <input type="text" id="search-input" class="search-input" placeholder="Search method, path, headers, body...">
+          <div class="method-filters">
+            <button class="filter-pill active" data-method="ALL">ALL</button>
+            <button class="filter-pill" data-method="POST">POST</button>
+            <button class="filter-pill" data-method="GET">GET</button>
+            <button class="filter-pill" data-method="PUT">PUT</button>
+            <button class="filter-pill" data-method="DELETE">DEL</button>
+          </div>
+          <div class="list-meta-row">
+            <span id="request-count" class="count-text">0 captured</span>
+            <button id="btn-clear-history" class="btn-link text-danger">Clear History</button>
+          </div>
+        </div>
+
+        <!-- Webhook Request Scrollable List -->
+        <div id="request-list" class="request-list">
+          <div class="empty-state">
+            <div class="empty-icon">📡</div>
+            <div class="empty-title">Waiting for webhooks...</div>
+            <div class="empty-desc">Send an HTTP request to the ingestion URL above.</div>
+          </div>
+        </div>
+      </aside>
+
+      <!-- Right Pane: Request Inspection & Replay Workbench -->
+      <main class="detail-pane" id="detail-pane">
+        <!-- Empty state when no request is selected -->
+        <div id="detail-empty" class="detail-empty-view">
+          <div class="empty-placeholder">
+            <div class="placeholder-icon">🔍</div>
+            <h2>No Webhook Selected</h2>
+            <p>Select a webhook from the left list or send a new request to inspect headers, raw body, signatures, and run replays.</p>
+          </div>
+        </div>
+
+        <!-- Selected Request Content -->
+        <div id="detail-content" class="detail-content-view hidden">
+          <!-- Replay Action Bar -->
+          <div class="replay-toolbar">
+            <div class="replay-input-group">
+              <span class="replay-label">Target URL:</span>
+              <input type="url" id="replay-target-input" placeholder="http://localhost:3000/api/webhook" spellcheck="false">
+              <button id="btn-replay" class="btn btn-replay">
+                <span id="replay-btn-text">⚡ Replay</span>
+              </button>
+              <button id="btn-code-export" class="btn btn-secondary">
+                Export Code
+              </button>
+            </div>
+            <div id="replay-feedback" class="replay-feedback hidden"></div>
+          </div>
+
+          <!-- Request Overview Strip -->
+          <div class="request-overview-strip">
+            <div class="overview-left">
+              <span id="detail-method" class="method-tag method-post">POST</span>
+              <span id="detail-path" class="overview-path">/catch/...</span>
+            </div>
+            <div class="overview-right">
+              <span class="meta-item"><span class="meta-label">IP:</span> <span id="detail-ip">-</span></span>
+              <span class="meta-item"><span class="meta-label">Time:</span> <span id="detail-timestamp">-</span></span>
+              <span class="meta-item"><span class="meta-label">Size:</span> <span id="detail-size">-</span></span>
+              <button id="btn-copy-id" class="btn btn-ghost btn-xs" title="Copy Request UUID">Copy ID</button>
+            </div>
+          </div>
+
+          <!-- Tabs Header -->
+          <div class="detail-tabs">
+            <button class="tab-btn active" data-tab="tab-payload">Payload</button>
+            <button class="tab-btn" data-tab="tab-headers">Headers <span id="headers-count" class="badge">0</span></button>
+            <button class="tab-btn" data-tab="tab-query">Query & Meta</button>
+            <button class="tab-btn" data-tab="tab-replays">Replays <span id="replays-count" class="badge">0</span></button>
+            <button class="tab-btn" data-tab="tab-security">Signature Inspector</button>
+          </div>
+
+          <!-- Tab 1: Payload -->
+          <div id="tab-payload" class="tab-pane active">
+            <div class="pane-action-bar">
+              <div class="view-toggles">
+                <button id="btn-view-formatted" class="btn-toggle active">Formatted JSON</button>
+                <button id="btn-view-raw" class="btn-toggle">Raw Body</button>
+              </div>
+              <button id="btn-copy-payload" class="btn btn-ghost btn-sm">Copy Payload</button>
+            </div>
+            <div class="code-container">
+              <pre id="payload-display" class="code-block"></pre>
+            </div>
+          </div>
+
+          <!-- Tab 2: Headers -->
+          <div id="tab-headers" class="tab-pane">
+            <div class="pane-action-bar">
+              <span class="hint-text">Exact HTTP request headers received by hook-trap</span>
+              <button id="btn-copy-headers" class="btn btn-ghost btn-sm">Copy All as JSON</button>
+            </div>
+            <div class="table-container">
+              <table class="data-table" id="headers-table">
+                <thead>
+                  <tr>
+                    <th style="width: 35%;">Header Name</th>
+                    <th>Header Value</th>
+                  </tr>
+                </thead>
+                <tbody id="headers-tbody"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Tab 3: Query & Meta -->
+          <div id="tab-query" class="tab-pane">
+            <div class="meta-section">
+              <h3 class="meta-title">URL Query Parameters</h3>
+              <div class="table-container">
+                <table class="data-table" id="query-table">
+                  <thead>
+                    <tr>
+                      <th style="width: 35%;">Parameter Key</th>
+                      <th>Value</th>
+                    </tr>
+                  </thead>
+                  <tbody id="query-tbody"></tbody>
+                </table>
+              </div>
+            </div>
+            <div class="meta-section">
+              <h3 class="meta-title">Metadata</h3>
+              <div class="key-value-list" id="meta-key-values"></div>
+            </div>
+          </div>
+
+          <!-- Tab 4: Replays -->
+          <div id="tab-replays" class="tab-pane">
+            <div class="pane-action-bar">
+              <span class="hint-text">History of local replay forwards executed for this request</span>
+            </div>
+            <div id="replays-container" class="replays-list"></div>
+          </div>
+
+          <!-- Tab 5: Signature Inspector -->
+          <div id="tab-security" class="tab-pane">
+            <div class="security-inspector-card">
+              <h3>Webhook Signature Validator</h3>
+              <p class="hint-text">Verify whether the HMAC signature sent in headers matches this request's raw body and your local webhook signing secret.</p>
+
+              <div class="form-group">
+                <label for="sig-provider">Provider Preset:</label>
+                <select id="sig-provider" class="form-select">
+                  <option value="stripe">Stripe (Stripe-Signature: t=...,v1=...)</option>
+                  <option value="github">GitHub (X-Hub-Signature-256: sha256=...)</option>
+                  <option value="shopify">Shopify (X-Shopify-Hmac-Sha256: base64)</option>
+                  <option value="generic">Generic HMAC-SHA256 (Hex)</option>
+                </select>
+              </div>
+
+              <div class="form-group">
+                <label for="sig-header-value">Signature Header Value:</label>
+                <input type="text" id="sig-header-value" class="form-input" placeholder="e.g. t=1614000000,v1=52571829f704d4ef01354a35f3ff5e0cffd6...">
+              </div>
+
+              <div class="form-group">
+                <label for="sig-secret">Signing Secret:</label>
+                <input type="password" id="sig-secret" class="form-input" placeholder="e.g. whsec_... or your secret key">
+              </div>
+
+              <button id="btn-verify-sig" class="btn btn-primary">Check Signature</button>
+
+              <div id="sig-result" class="sig-result-box hidden"></div>
+            </div>
+          </div>
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <!-- Export Code Modal -->
+  <div id="export-modal" class="modal-backdrop hidden">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3>Export Request Code</h3>
+        <button id="btn-close-modal" class="btn-close">&times;</button>
+      </div>
+      <div class="modal-tabs">
+        <button class="export-tab-btn active" data-lang="curl">cURL</button>
+        <button class="export-tab-btn" data-lang="python">Python (httpx)</button>
+        <button class="export-tab-btn" data-lang="javascript">JavaScript (fetch)</button>
+      </div>
+      <div class="modal-body">
+        <pre id="export-code-block" class="code-block"></pre>
+      </div>
+      <div class="modal-footer">
+        <button id="btn-copy-export" class="btn btn-primary btn-sm">Copy Code</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

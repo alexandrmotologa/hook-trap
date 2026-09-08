@@ -1,0 +1,892 @@
+// hook-trap Inspector Frontend Client
+(function () {
+  "use strict";
+
+  // State
+  let channelId = "";
+  let socket = null;
+  let socketReconnectTimer = null;
+  let requests = [];
+  let selectedRequestId = null;
+  let currentDetail = null;
+  let activeMethodFilter = "ALL";
+  let activeSearchTerm = "";
+  let activePayloadView = "formatted"; // "formatted" | "raw"
+
+  // DOM Elements
+  const els = {
+    wsStatus: document.getElementById("ws-status"),
+    wsStatusText: document.getElementById("ws-status-text"),
+    btnNewChannel: document.getElementById("btn-new-channel"),
+    channelBadge: document.getElementById("channel-badge"),
+    ingestUrlInput: document.getElementById("ingest-url-input"),
+    btnCopyUrl: document.getElementById("btn-copy-url"),
+    autoforwardToggle: document.getElementById("autoforward-toggle"),
+    autoforwardUrl: document.getElementById("autoforward-url"),
+    btnSaveAutoforward: document.getElementById("btn-save-autoforward"),
+    searchInput: document.getElementById("search-input"),
+    filterPills: document.querySelectorAll(".filter-pill"),
+    requestCount: document.getElementById("request-count"),
+    btnClearHistory: document.getElementById("btn-clear-history"),
+    requestList: document.getElementById("request-list"),
+
+    detailEmpty: document.getElementById("detail-empty"),
+    detailContent: document.getElementById("detail-content"),
+    replayTargetInput: document.getElementById("replay-target-input"),
+    btnReplay: document.getElementById("btn-replay"),
+    replayBtnText: document.getElementById("replay-btn-text"),
+    replayFeedback: document.getElementById("replay-feedback"),
+    btnCodeExport: document.getElementById("btn-code-export"),
+
+    detailMethod: document.getElementById("detail-method"),
+    detailPath: document.getElementById("detail-path"),
+    detailIp: document.getElementById("detail-ip"),
+    detailTimestamp: document.getElementById("detail-timestamp"),
+    detailSize: document.getElementById("detail-size"),
+    btnCopyId: document.getElementById("btn-copy-id"),
+
+    tabBtns: document.querySelectorAll(".tab-btn"),
+    tabPanes: document.querySelectorAll(".tab-pane"),
+    headersCount: document.getElementById("headers-count"),
+    replaysCount: document.getElementById("replays-count"),
+
+    btnViewFormatted: document.getElementById("btn-view-formatted"),
+    btnViewRaw: document.getElementById("btn-view-raw"),
+    btnCopyPayload: document.getElementById("btn-copy-payload"),
+    payloadDisplay: document.getElementById("payload-display"),
+
+    headersTbody: document.getElementById("headers-tbody"),
+    btnCopyHeaders: document.getElementById("btn-copy-headers"),
+
+    queryTbody: document.getElementById("query-tbody"),
+    metaKeyValues: document.getElementById("meta-key-values"),
+
+    replaysContainer: document.getElementById("replays-container"),
+
+    sigProvider: document.getElementById("sig-provider"),
+    sigHeaderValue: document.getElementById("sig-header-value"),
+    sigSecret: document.getElementById("sig-secret"),
+    btnVerifySig: document.getElementById("btn-verify-sig"),
+    sigResult: document.getElementById("sig-result"),
+
+    exportModal: document.getElementById("export-modal"),
+    btnCloseModal: document.getElementById("btn-close-modal"),
+    exportCodeBlock: document.getElementById("export-code-block"),
+    btnCopyExport: document.getElementById("btn-copy-export"),
+    exportTabBtns: document.querySelectorAll(".export-tab-btn"),
+  };
+
+  // Extract channel ID from path: /c/{channel_id}
+  function initChannel() {
+    const parts = window.location.pathname.split("/").filter(Boolean);
+    if (parts.length >= 2 && parts[0] === "c") {
+      channelId = parts[1];
+    } else {
+      channelId = "default";
+    }
+
+    els.channelBadge.textContent = channelId;
+    const origin = window.location.origin;
+    const fullIngestUrl = `${origin}/catch/${channelId}`;
+    els.ingestUrlInput.value = fullIngestUrl;
+
+    // Restore last used replay target from localStorage
+    const savedReplayUrl = localStorage.getItem("hook_trap_replay_target");
+    if (savedReplayUrl) {
+      els.replayTargetInput.value = savedReplayUrl;
+    }
+  }
+
+  // Load initial channel config from server
+  async function loadChannelConfig() {
+    try {
+      const res = await fetch(`/api/channels/${channelId}/config`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.auto_forward_url) {
+          els.autoforwardUrl.value = data.auto_forward_url;
+          els.autoforwardToggle.checked = true;
+          if (!els.replayTargetInput.value) {
+            els.replayTargetInput.value = data.auto_forward_url;
+          }
+        }
+      }
+    } catch (err) {
+      console.warn("Could not fetch channel config", err);
+    }
+  }
+
+  // Save auto-forward settings
+  async function saveChannelConfig() {
+    const isEnabled = els.autoforwardToggle.checked;
+    const url = isEnabled ? els.autoforwardUrl.value.trim() : null;
+
+    try {
+      const res = await fetch(`/api/channels/${channelId}/config`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ auto_forward_url: url }),
+      });
+      if (res.ok) {
+        showFeedback("Auto-forward setting saved", "success");
+      }
+    } catch (err) {
+      showFeedback("Failed to save auto-forward setting", "error");
+    }
+  }
+
+  // WebSocket lifecycle
+  function connectWebSocket() {
+    if (socketReconnectTimer) {
+      clearTimeout(socketReconnectTimer);
+      socketReconnectTimer = null;
+    }
+
+    const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
+    const wsUrl = `${proto}//${window.location.host}/ws/${channelId}`;
+
+    socket = new WebSocket(wsUrl);
+
+    socket.onopen = () => {
+      els.wsStatus.className = "status-indicator connected";
+      els.wsStatusText.textContent = "Live connected";
+    };
+
+    socket.onmessage = (event) => {
+      try {
+        const msg = JSON.parse(event.data);
+        if (msg.event === "new_request") {
+          handleIncomingRequest(msg.data);
+        } else if (msg.event === "replay_executed") {
+          handleIncomingReplay(msg.data);
+        } else if (msg.event === "ping") {
+          socket.send("pong");
+        }
+      } catch (err) {
+        console.warn("WebSocket parse error", err);
+      }
+    };
+
+    socket.onclose = () => {
+      els.wsStatus.className = "status-indicator disconnected";
+      els.wsStatusText.textContent = "Reconnecting...";
+      socketReconnectTimer = setTimeout(connectWebSocket, 3000);
+    };
+
+    socket.onerror = () => {
+      socket.close();
+    };
+  }
+
+  // Load existing requests via REST
+  async function fetchRequests() {
+    try {
+      let url = `/api/channels/${channelId}/requests?limit=100`;
+      if (activeMethodFilter !== "ALL") {
+        url += `&method=${encodeURIComponent(activeMethodFilter)}`;
+      }
+      if (activeSearchTerm) {
+        url += `&search=${encodeURIComponent(activeSearchTerm)}`;
+      }
+
+      const res = await fetch(url);
+      if (res.ok) {
+        const data = await res.json();
+        requests = data.items || [];
+        renderRequestList();
+
+        // Select first if nothing selected
+        if (!selectedRequestId && requests.length > 0) {
+          selectRequest(requests[0].id);
+        }
+      }
+    } catch (err) {
+      console.error("Failed to fetch requests", err);
+    }
+  }
+
+  function handleIncomingRequest(summary) {
+    // Check if it matches active method filter
+    const matchesFilter =
+      activeMethodFilter === "ALL" ||
+      summary.method.toUpperCase() === activeMethodFilter.toUpperCase();
+
+    // Check search term
+    const matchesSearch =
+      !activeSearchTerm ||
+      summary.path.toLowerCase().includes(activeSearchTerm.toLowerCase()) ||
+      JSON.stringify(summary.headers || {}).toLowerCase().includes(activeSearchTerm.toLowerCase());
+
+    requests.unshift(summary);
+
+    if (matchesFilter && matchesSearch) {
+      renderRequestList();
+    } else {
+      updateRequestCount();
+    }
+
+    // Auto-select if nothing was selected yet
+    if (!selectedRequestId) {
+      selectRequest(summary.id);
+    }
+  }
+
+  function handleIncomingReplay(replayData) {
+    // Update replay count in list item
+    const target = requests.find((r) => r.id === replayData.request_id);
+    if (target) {
+      target.replay_count = (target.replay_count || 0) + 1;
+      renderRequestList();
+    }
+
+    // If currently inspecting this request, reload detail
+    if (selectedRequestId === replayData.request_id) {
+      loadRequestDetail(selectedRequestId);
+    }
+  }
+
+  function renderRequestList() {
+    updateRequestCount();
+
+    if (requests.length === 0) {
+      els.requestList.innerHTML = `
+        <div class="empty-state">
+          <div class="empty-icon">📡</div>
+          <div class="empty-title">Waiting for webhooks...</div>
+          <div class="empty-desc">Send an HTTP request to the ingestion URL above.</div>
+        </div>
+      `;
+      return;
+    }
+
+    const html = requests
+      .map((req) => {
+        const method = (req.method || "POST").toUpperCase();
+        const methodClass = `method-${method.toLowerCase()}`;
+        const isSelected = req.id === selectedRequestId ? "selected" : "";
+        const formattedTime = formatTimestamp(req.timestamp);
+        const sizeText = formatBytes(req.body_size || 0);
+
+        let replayBadge = "";
+        if (req.replay_count > 0) {
+          replayBadge = `<span class="item-replay-badge" title="Replayed ${req.replay_count} times">⚡ ${req.replay_count}</span>`;
+        }
+
+        return `
+          <div class="request-item ${isSelected}" data-id="${escapeHtml(req.id)}">
+            <span class="method-tag ${methodClass}">${escapeHtml(method)}</span>
+            <div class="item-info">
+              <div class="item-path">${escapeHtml(req.path)}</div>
+              <div class="item-meta">
+                <span>${formattedTime}</span>
+                <span>${sizeText}</span>
+                ${replayBadge}
+              </div>
+            </div>
+          </div>
+        `;
+      })
+      .join("");
+
+    els.requestList.innerHTML = html;
+
+    // Attach click handlers
+    els.requestList.querySelectorAll(".request-item").forEach((item) => {
+      item.addEventListener("click", () => {
+        const id = item.getAttribute("data-id");
+        selectRequest(id);
+      });
+    });
+  }
+
+  function updateRequestCount() {
+    els.requestCount.textContent = `${requests.length} captured`;
+  }
+
+  async function selectRequest(id) {
+    selectedRequestId = id;
+
+    // Highlight selected item in list
+    els.requestList.querySelectorAll(".request-item").forEach((item) => {
+      if (item.getAttribute("data-id") === id) {
+        item.classList.add("selected");
+      } else {
+        item.classList.remove("selected");
+      }
+    });
+
+    await loadRequestDetail(id);
+  }
+
+  async function loadRequestDetail(id) {
+    try {
+      const res = await fetch(`/api/channels/${channelId}/requests/${id}`);
+      if (!res.ok) return;
+
+      currentDetail = await res.json();
+      renderRequestDetail(currentDetail);
+    } catch (err) {
+      console.error("Error loading detail", err);
+    }
+  }
+
+  function renderRequestDetail(detail) {
+    els.detailEmpty.classList.add("hidden");
+    els.detailContent.classList.remove("hidden");
+
+    // Overview Strip
+    const method = (detail.method || "POST").toUpperCase();
+    els.detailMethod.textContent = method;
+    els.detailMethod.className = `method-tag method-${method.toLowerCase()}`;
+    els.detailPath.textContent = detail.path;
+    els.detailIp.textContent = detail.client_ip || "127.0.0.1";
+    els.detailTimestamp.textContent = formatTimestamp(detail.timestamp);
+    els.detailSize.textContent = formatBytes(
+      detail.body_raw ? new Blob([detail.body_raw]).size : 0
+    );
+
+    // Payload tab
+    renderPayload(detail);
+
+    // Headers tab
+    renderHeaders(detail.headers || {});
+
+    // Query & Meta tab
+    renderQueryAndMeta(detail);
+
+    // Replays tab
+    renderReplays(detail.replays || []);
+
+    // Auto-detect signature in headers for Signature Inspector tab
+    inspectSignatures(detail.headers || {});
+  }
+
+  function renderPayload(detail) {
+    const raw = detail.body_raw || "";
+    if (activePayloadView === "formatted" && detail.body_json !== null && detail.body_json !== undefined) {
+      els.payloadDisplay.innerHTML = syntaxHighlightJson(detail.body_json);
+    } else {
+      els.payloadDisplay.textContent = raw || "(Empty Body)";
+    }
+  }
+
+  function renderHeaders(headers) {
+    const entries = Object.entries(headers);
+    els.headersCount.textContent = entries.length;
+
+    if (entries.length === 0) {
+      els.headersTbody.innerHTML = `<tr><td colspan="2" style="color: var(--text-muted); text-align: center;">No headers recorded</td></tr>`;
+      return;
+    }
+
+    const html = entries
+      .map(([k, v]) => {
+        const lower = k.toLowerCase();
+        let sigBadge = "";
+        if (lower.includes("signature") || lower.includes("hmac") || lower.includes("svix")) {
+          sigBadge = `<span class="sig-badge">Signature</span>`;
+        }
+        return `
+          <tr>
+            <td><strong>${escapeHtml(k)}</strong>${sigBadge}</td>
+            <td>${escapeHtml(v)}</td>
+          </tr>
+        `;
+      })
+      .join("");
+
+    els.headersTbody.innerHTML = html;
+  }
+
+  function renderQueryAndMeta(detail) {
+    const queryParams = Object.entries(detail.query_params || {});
+    if (queryParams.length === 0) {
+      els.queryTbody.innerHTML = `<tr><td colspan="2" style="color: var(--text-muted); text-align: center;">No query parameters</td></tr>`;
+    } else {
+      els.queryTbody.innerHTML = queryParams
+        .map(
+          ([k, v]) => `
+          <tr>
+            <td><strong>${escapeHtml(k)}</strong></td>
+            <td>${escapeHtml(String(v))}</td>
+          </tr>
+        `
+        )
+        .join("");
+    }
+
+    els.metaKeyValues.innerHTML = `
+      <div style="font-size: 0.8rem; display: flex; flex-direction: column; gap: 6px;">
+        <div><strong style="color: var(--text-secondary);">Request UUID:</strong> <code>${escapeHtml(detail.id)}</code></div>
+        <div><strong style="color: var(--text-secondary);">Content-Type:</strong> <code>${escapeHtml(detail.content_type || "None")}</code></div>
+        <div><strong style="color: var(--text-secondary);">Client IP:</strong> <code>${escapeHtml(detail.client_ip || "Unknown")}</code></div>
+        <div><strong style="color: var(--text-secondary);">Total Replays:</strong> ${detail.replay_count || 0}</div>
+      </div>
+    `;
+  }
+
+  function renderReplays(replays) {
+    els.replaysCount.textContent = replays.length;
+
+    if (replays.length === 0) {
+      els.replaysContainer.innerHTML = `
+        <div class="empty-state" style="padding: 24px;">
+          <div class="empty-title">No replays recorded yet</div>
+          <div class="empty-desc">Click the "⚡ Replay" button above to forward this webhook to your local server.</div>
+        </div>
+      `;
+      return;
+    }
+
+    const html = replays
+      .map((log) => {
+        const isSuccess = log.status_code && log.status_code >= 200 && log.status_code < 300;
+        const statusClass = isSuccess
+          ? "replay-status-2xx"
+          : log.status_code
+          ? "replay-status-4xx"
+          : "replay-status-err";
+        const statusText = log.status_code ? `${log.status_code} OK` : "FAILED";
+
+        return `
+          <div class="replay-card">
+            <div class="replay-header">
+              <div>
+                <span class="replay-status-pill ${statusClass}">${statusText}</span>
+                <strong style="font-family: var(--font-mono); margin-left: 8px;">${escapeHtml(log.target_url)}</strong>
+              </div>
+              <div style="font-size: 0.75rem; color: var(--text-muted);">
+                ${log.latency_ms} ms &bull; ${formatTimestamp(log.created_at)}
+              </div>
+            </div>
+            ${
+              log.error
+                ? `<div style="color: var(--color-danger); font-size: 0.8rem; margin-top: 6px;">${escapeHtml(log.error)}</div>`
+                : ""
+            }
+            ${
+              log.response_body
+                ? `<div style="margin-top: 8px;">
+                     <div style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 4px;">Target Response Body:</div>
+                     <pre class="code-block" style="max-height: 120px; font-size: 0.75rem;">${escapeHtml(log.response_body)}</pre>
+                   </div>`
+                : ""
+            }
+          </div>
+        `;
+      })
+      .join("");
+
+    els.replaysContainer.innerHTML = html;
+  }
+
+  function inspectSignatures(headers) {
+    // Try finding known signature headers
+    let foundSig = "";
+    let detectedProvider = "generic";
+
+    for (const [k, v] of Object.entries(headers)) {
+      const lk = k.toLowerCase();
+      if (lk === "stripe-signature") {
+        foundSig = v;
+        detectedProvider = "stripe";
+        break;
+      } else if (lk === "x-hub-signature-256" || lk === "x-hub-signature") {
+        foundSig = v;
+        detectedProvider = "github";
+        break;
+      } else if (lk === "x-shopify-hmac-sha256") {
+        foundSig = v;
+        detectedProvider = "shopify";
+        break;
+      }
+    }
+
+    if (foundSig) {
+      els.sigHeaderValue.value = foundSig;
+      els.sigProvider.value = detectedProvider;
+    }
+  }
+
+  // Trigger Replay
+  async function triggerReplay() {
+    if (!currentDetail) return;
+    const targetUrl = els.replayTargetInput.value.trim();
+    if (!targetUrl) {
+      alert("Please enter a valid target URL to forward/replay this request to.");
+      return;
+    }
+
+    // Save to localStorage
+    localStorage.setItem("hook_trap_replay_target", targetUrl);
+
+    els.btnReplay.disabled = true;
+    els.replayBtnText.textContent = "Forwarding...";
+    els.replayFeedback.className = "replay-feedback hidden";
+
+    try {
+      const res = await fetch(
+        `/api/channels/${channelId}/requests/${currentDetail.id}/replay`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ target_url: targetUrl }),
+        }
+      );
+
+      const result = await res.json();
+      if (res.ok) {
+        const isOk = result.status_code && result.status_code >= 200 && result.status_code < 400;
+        els.replayFeedback.className = `replay-feedback ${isOk ? "success" : "error"}`;
+        els.replayFeedback.textContent = isOk
+          ? `✓ ${result.status_code} Response received in ${result.latency_ms} ms`
+          : `✗ Error: ${result.error || `Status ${result.status_code}`} (${result.latency_ms} ms)`;
+        els.replayFeedback.classList.remove("hidden");
+      } else {
+        els.replayFeedback.className = "replay-feedback error";
+        els.replayFeedback.textContent = `✗ Replay failed: ${result.detail || "Server error"}`;
+        els.replayFeedback.classList.remove("hidden");
+      }
+    } catch (err) {
+      els.replayFeedback.className = "replay-feedback error";
+      els.replayFeedback.textContent = `✗ Network error: ${err.message}`;
+      els.replayFeedback.classList.remove("hidden");
+    } finally {
+      els.btnReplay.disabled = false;
+      els.replayBtnText.textContent = "⚡ Replay";
+      loadRequestDetail(currentDetail.id);
+    }
+  }
+
+  // Trigger Signature Verification
+  async function verifySignature() {
+    if (!currentDetail) return;
+    const provider = els.sigProvider.value;
+    const sigHeader = els.sigHeaderValue.value.trim();
+    const secret = els.sigSecret.value.trim();
+
+    if (!sigHeader) {
+      alert("Please enter or verify the signature header value.");
+      return;
+    }
+    if (!secret) {
+      alert("Please enter your webhook signing secret.");
+      return;
+    }
+
+    try {
+      const res = await fetch("/api/verify-signature", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          provider: provider,
+          secret: secret,
+          signature_header: sigHeader,
+          raw_payload: currentDetail.body_raw || "",
+        }),
+      });
+
+      const result = await res.json();
+      els.sigResult.classList.remove("hidden");
+      if (result.valid) {
+        els.sigResult.className = "sig-result-box valid";
+        els.sigResult.innerHTML = `<strong>✓ VALID SIGNATURE:</strong> ${escapeHtml(
+          result.message
+        )}<br><small>Computed: ${escapeHtml(result.details.computed || "")}</small>`;
+      } else {
+        els.sigResult.className = "sig-result-box invalid";
+        els.sigResult.innerHTML = `<strong>✗ INVALID SIGNATURE:</strong> ${escapeHtml(
+          result.message
+        )}<br><small>Expected: ${escapeHtml(result.details.computed || "")}</small>`;
+      }
+    } catch (err) {
+      alert("Signature verification request failed: " + err.message);
+    }
+  }
+
+  // Clear Channel History
+  async function clearHistory() {
+    if (!confirm("Are you sure you want to clear all captured requests for this channel?")) {
+      return;
+    }
+
+    try {
+      const res = await fetch(`/api/channels/${channelId}/requests`, {
+        method: "DELETE",
+      });
+      if (res.ok) {
+        requests = [];
+        selectedRequestId = null;
+        currentDetail = null;
+        renderRequestList();
+        els.detailEmpty.classList.remove("hidden");
+        els.detailContent.classList.add("hidden");
+      }
+    } catch (err) {
+      alert("Failed to clear history: " + err.message);
+    }
+  }
+
+  // Code Export Generators
+  let currentExportLang = "curl";
+
+  function openExportModal() {
+    if (!currentDetail) return;
+    updateExportCode(currentExportLang);
+    els.exportModal.classList.remove("hidden");
+  }
+
+  function updateExportCode(lang) {
+    currentExportLang = lang;
+    els.exportTabBtns.forEach((btn) => {
+      btn.classList.toggle("active", btn.getAttribute("data-lang") === lang);
+    });
+
+    const targetUrl = els.replayTargetInput.value.trim() || `http://localhost:3000/api/webhook`;
+    const method = (currentDetail.method || "POST").toUpperCase();
+    const headers = currentDetail.headers || {};
+    const body = currentDetail.body_raw || "";
+
+    let code = "";
+
+    if (lang === "curl") {
+      code = `curl -X ${method} "${targetUrl}"`;
+      for (const [k, v] of Object.entries(headers)) {
+        if (!["host", "content-length"].includes(k.toLowerCase())) {
+          code += ` \\\n  -H "${k}: ${v.replace(/"/g, '\\"')}"`;
+        }
+      }
+      if (body && !["GET", "HEAD"].includes(method)) {
+        code += ` \\\n  --data '${body.replace(/'/g, "'\\''")}'`;
+      }
+    } else if (lang === "python") {
+      const headerDict = {};
+      for (const [k, v] of Object.entries(headers)) {
+        if (!["host", "content-length"].includes(k.toLowerCase())) {
+          headerDict[k] = v;
+        }
+      }
+      code = `import httpx
+
+url = "${targetUrl}"
+headers = ${JSON.stringify(headerDict, null, 4)}
+data = """${body.replace(/"""/g, '\\"\\"\\"')}"""
+
+response = httpx.${method.toLowerCase()}(url, headers=headers, content=data)
+print(f"Status: {response.status_code}")
+print(response.text)
+`;
+    } else if (lang === "javascript") {
+      const headerDict = {};
+      for (const [k, v] of Object.entries(headers)) {
+        if (!["host", "content-length"].includes(k.toLowerCase())) {
+          headerDict[k] = v;
+        }
+      }
+      code = `fetch("${targetUrl}", {
+  method: "${method}",
+  headers: ${JSON.stringify(headerDict, null, 4)},
+  body: ${["GET", "HEAD"].includes(method) ? "undefined" : JSON.stringify(body)}
+})
+  .then(res => res.text())
+  .then(text => console.log(text))
+  .catch(err => console.error(err));
+`;
+    }
+
+    els.exportCodeBlock.textContent = code;
+  }
+
+  // Utilities
+  function formatTimestamp(isoStr) {
+    if (!isoStr) return "-";
+    try {
+      const d = new Date(isoStr);
+      return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+    } catch {
+      return isoStr;
+    }
+  }
+
+  function formatBytes(bytes) {
+    if (bytes === 0) return "0 B";
+    const k = 1024;
+    const sizes = ["B", "KB", "MB", "GB"];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + " " + sizes[i];
+  }
+
+  function escapeHtml(str) {
+    if (!str) return "";
+    return String(str)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#039;");
+  }
+
+  function syntaxHighlightJson(json) {
+    if (typeof json !== "string") {
+      json = JSON.stringify(json, null, 2);
+    }
+    json = escapeHtml(json);
+    return json.replace(
+      /("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g,
+      function (match) {
+        let cls = "json-number";
+        if (/^"/.test(match)) {
+          if (/:$/.test(match)) {
+            cls = "json-key";
+          } else {
+            cls = "json-string";
+          }
+        } else if (/true|false/.test(match)) {
+          cls = "json-boolean";
+        } else if (/null/.test(match)) {
+          cls = "json-null";
+        }
+        return '<span class="' + cls + '">' + match + "</span>";
+      }
+    );
+  }
+
+  function showFeedback(msg, type) {
+    const feedback = document.createElement("div");
+    feedback.className = `replay-feedback ${type}`;
+    feedback.style.position = "fixed";
+    feedback.style.bottom = "20px";
+    feedback.style.right = "20px";
+    feedback.style.zIndex = "9999";
+    feedback.textContent = msg;
+    document.body.appendChild(feedback);
+    setTimeout(() => feedback.remove(), 2500);
+  }
+
+  // Event Listeners Setup
+  function setupEvents() {
+    // Copy Ingest URL
+    els.btnCopyUrl.addEventListener("click", () => {
+      navigator.clipboard.writeText(els.ingestUrlInput.value).then(() => {
+        const originalText = els.btnCopyUrl.textContent;
+        els.btnCopyUrl.textContent = "Copied!";
+        setTimeout(() => (els.btnCopyUrl.textContent = originalText), 1500);
+      });
+    });
+
+    // New Channel
+    els.btnNewChannel.addEventListener("click", () => {
+      const randHex = Math.random().toString(16).substring(2, 10);
+      window.location.href = `/c/${randHex}`;
+    });
+
+    // Auto-forward save
+    els.btnSaveAutoforward.addEventListener("click", saveChannelConfig);
+    els.autoforwardToggle.addEventListener("change", saveChannelConfig);
+
+    // Search and filters
+    els.searchInput.addEventListener("input", (e) => {
+      activeSearchTerm = e.target.value;
+      fetchRequests();
+    });
+
+    els.filterPills.forEach((pill) => {
+      pill.addEventListener("click", () => {
+        els.filterPills.forEach((p) => p.classList.remove("active"));
+        pill.classList.add("active");
+        activeMethodFilter = pill.getAttribute("data-method");
+        fetchRequests();
+      });
+    });
+
+    // Clear History
+    els.btnClearHistory.addEventListener("click", clearHistory);
+
+    // Replay
+    els.btnReplay.addEventListener("click", triggerReplay);
+
+    // Code Export
+    els.btnCodeExport.addEventListener("click", openExportModal);
+    els.btnCloseModal.addEventListener("click", () => els.exportModal.classList.add("hidden"));
+    els.exportTabBtns.forEach((btn) => {
+      btn.addEventListener("click", () => updateExportCode(btn.getAttribute("data-lang")));
+    });
+    els.btnCopyExport.addEventListener("click", () => {
+      navigator.clipboard.writeText(els.exportCodeBlock.textContent).then(() => {
+        els.btnCopyExport.textContent = "Copied!";
+        setTimeout(() => (els.btnCopyExport.textContent = "Copy Code"), 1500);
+      });
+    });
+
+    // Copy Request ID
+    els.btnCopyId.addEventListener("click", () => {
+      if (currentDetail) {
+        navigator.clipboard.writeText(currentDetail.id).then(() => {
+          els.btnCopyId.textContent = "Copied!";
+          setTimeout(() => (els.btnCopyId.textContent = "Copy ID"), 1500);
+        });
+      }
+    });
+
+    // Tabs switching
+    els.tabBtns.forEach((btn) => {
+      btn.addEventListener("click", () => {
+        els.tabBtns.forEach((b) => b.classList.remove("active"));
+        els.tabPanes.forEach((p) => p.classList.remove("active"));
+
+        btn.classList.add("active");
+        const targetId = btn.getAttribute("data-tab");
+        const targetPane = document.getElementById(targetId);
+        if (targetPane) targetPane.classList.add("active");
+      });
+    });
+
+    // Payload view toggle
+    els.btnViewFormatted.addEventListener("click", () => {
+      activePayloadView = "formatted";
+      els.btnViewFormatted.classList.add("active");
+      els.btnViewRaw.classList.remove("active");
+      if (currentDetail) renderPayload(currentDetail);
+    });
+
+    els.btnViewRaw.addEventListener("click", () => {
+      activePayloadView = "raw";
+      els.btnViewRaw.classList.add("active");
+      els.btnViewFormatted.classList.remove("active");
+      if (currentDetail) renderPayload(currentDetail);
+    });
+
+    // Copy Payload
+    els.btnCopyPayload.addEventListener("click", () => {
+      if (currentDetail) {
+        const textToCopy = currentDetail.body_raw || "";
+        navigator.clipboard.writeText(textToCopy).then(() => {
+          els.btnCopyPayload.textContent = "Copied!";
+          setTimeout(() => (els.btnCopyPayload.textContent = "Copy Payload"), 1500);
+        });
+      }
+    });
+
+    // Copy All Headers as JSON
+    els.btnCopyHeaders.addEventListener("click", () => {
+      if (currentDetail) {
+        navigator.clipboard.writeText(JSON.stringify(currentDetail.headers || {}, null, 2)).then(() => {
+          els.btnCopyHeaders.textContent = "Copied!";
+          setTimeout(() => (els.btnCopyHeaders.textContent = "Copy All as JSON"), 1500);
+        });
+      }
+    });
+
+    // Signature Inspector button
+    els.btnVerifySig.addEventListener("click", verifySignature);
+  }
+
+  // Initialization
+  document.addEventListener("DOMContentLoaded", () => {
+    initChannel();
+    setupEvents();
+    loadChannelConfig();
+    fetchRequests();
+    connectWebSocket();
+  });
+})();

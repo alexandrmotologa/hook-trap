@@ -1,0 +1,15 @@
+services:
+  hook-trap:
+    build: .
+    ports:
+      - "8080:8080"
+    volumes:
+      - hook_trap_data:/data
+    environment:
+      - HOOK_TRAP_HOST=0.0.0.0
+      - HOOK_TRAP_PORT=8080
+      - HOOK_TRAP_DB_PATH=/data/hook_trap.db
+    restart: unless-stopped
+
+volumes:
+  hook_trap_data:
