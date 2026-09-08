@@ -1,5 +1,7 @@
 # hook-trap
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
 A lightweight webhook inspector, debugger, and local forwarding proxy built with FastAPI, WebSockets, and SQLite.
 
 When you develop applications that receive webhooks from Stripe, GitHub, Shopify, or Twilio, testing endpoints locally usually requires third party tunnel services or repeated manual requests. `hook-trap` runs locally, receives incoming payloads on isolated channel URLs, logs them in SQLite, streams them in real time over WebSockets to a dark mode dashboard, and replays them to your development server with one click.
@@ -206,4 +208,4 @@ pytest -v tests/
 
 ## License
 
-MIT
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
