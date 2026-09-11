@@ -6,7 +6,9 @@ A lightweight webhook inspector, debugger, and local forwarding proxy built with
 
 When you develop applications that receive webhooks from Stripe, GitHub, Shopify, or Twilio, testing endpoints locally usually requires third party tunnel services or repeated manual requests. `hook-trap` runs locally, receives incoming payloads on isolated channel URLs, logs them in SQLite, streams them in real time over WebSockets to a dark mode dashboard, and replays them to your development server with one click.
 
-![hook-trap Dashboard Overview](docs/screenshots/01_dashboard_overview.png)
+<p align="center">
+  <img src="docs/images/hook_trap_demo.gif" alt="hook-trap Interactive Demo" width="850" />
+</p>
 
 ## Screenshots
 
@@ -31,6 +33,7 @@ When you develop applications that receive webhooks from Stripe, GitHub, Shopify
 | ![Keyboard Shortcuts](docs/screenshots/07_keyboard_shortcuts.png) |
 
 </details>
+
 
 ## Features
 

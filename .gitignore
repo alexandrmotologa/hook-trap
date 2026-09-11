@@ -53,3 +53,6 @@ htmlcov/
 
 # Antigravity artifacts / logs
 .system_generated/
+
+# Master demo video recording
+*.mp4
