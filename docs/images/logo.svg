@@ -1,0 +1,246 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <!-- Squircle container clipping mask -->
+    <clipPath id="squircle-clip">
+      <rect x="24" y="24" width="976" height="976" rx="220" />
+    </clipPath>
+
+    <!-- Electric Cyan Gradient for Optics & Telemetry Core -->
+    <linearGradient id="cyan-glow" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#00f5ff" />
+      <stop offset="100%" stop-color="#0284c7" />
+    </linearGradient>
+
+    <!-- Emerald-Teal Accent Gradient (Signature Validation & Safe Trap) -->
+    <linearGradient id="teal-accent" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#10b981" />
+      <stop offset="100%" stop-color="#00f5ff" />
+    </linearGradient>
+
+    <!-- Volumetric Obsidian & Slate Armor Facet Gradients -->
+    <linearGradient id="slate-highlight" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#64748b" />
+      <stop offset="100%" stop-color="#475569" />
+    </linearGradient>
+    <linearGradient id="slate-light" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#475569" />
+      <stop offset="100%" stop-color="#334155" />
+    </linearGradient>
+    <linearGradient id="slate-mid" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#334155" />
+      <stop offset="100%" stop-color="#1e293b" />
+    </linearGradient>
+    <linearGradient id="slate-dark" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#1e293b" />
+      <stop offset="100%" stop-color="#0f172a" />
+    </linearGradient>
+    <linearGradient id="slate-deep" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#0f172a" />
+      <stop offset="100%" stop-color="#060911" />
+    </linearGradient>
+
+    <!-- Floating Drop Shadow Filter -->
+    <filter id="subtle-shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="16" stdDeviation="24" flood-color="#070b14" flood-opacity="0.20" />
+    </filter>
+
+    <!-- Core Glow Filter -->
+    <filter id="core-glow" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="0" stdDeviation="12" flood-color="#00f5ff" flood-opacity="0.45" />
+    </filter>
+  </defs>
+
+  <!-- Luxury White Squircle Container -->
+  <rect x="24" y="24" width="976" height="976" rx="220" fill="#ffffff" stroke="#e2e8f0" stroke-width="6" />
+
+  <g clip-path="url(#squircle-clip)">
+    <g transform="translate(512, 512)" filter="url(#subtle-shadow)">
+
+      <!-- Hexagonal Architectural Gateway Frame -->
+      <polygon points="
+        0,-410
+        355,-205
+        355,205
+        0,410
+        -355,205
+        -355,-205
+      " fill="none" stroke="#0f172a" stroke-width="40" stroke-linejoin="round" />
+
+      <!-- Inner Precision Telemetry Dashed Hexagon -->
+      <polygon points="
+        0,-375
+        324,-187
+        324,187
+        0,375
+        -324,187
+        -324,-187
+      " fill="none" stroke="url(#cyan-glow)" stroke-width="4" opacity="0.45" stroke-dasharray="16, 12" />
+
+      <!-- Radar Telemetry Arcs (Upper Ingestion Chamber) -->
+      <path d="M -160,-280 A 320 320 0 0 1 160,-280" fill="none" stroke="#00f5ff" stroke-width="2.5" opacity="0.22" stroke-dasharray="8, 8" />
+      <path d="M -110,-310 A 320 320 0 0 1 110,-310" fill="none" stroke="#00f5ff" stroke-width="2" opacity="0.32" />
+
+      <!-- ================= 100% WATERTIGHT SOLID BASE SILHOUETTE ================= -->
+      <path d="
+        M 0,-365
+        L 25,-295 L 95,-355 L 75,-275 L 125,-255 L 80,-215 L 35,-160
+        L 30,-90 L 45,-50
+        L 120,-110 L 260,-165 L 295,-115 L 280,20 L 210,115
+        L 90,75 L 140,40 L 170,-10 L 160,-75 L 65,-30
+        L 80,45 L 180,180 L 130,275 L 55,345 L 0,370
+        L -55,345 L -130,275 L -180,180 L -80,45
+        L -65,-30 L -160,-75 L -170,-10 L -140,40 L -90,75
+        L -210,115 L -280,20 L -295,-115 L -260,-165 L -120,-110
+        L -45,-50 L -30,-90
+        L -35,-160 L -80,-215 L -125,-255 L -75,-275 L -95,-355 L -25,-295
+        Z
+      " fill="#060911" />
+
+      <!-- ================= ELYTRA & ABDOMEN (LOWER CHASSIS) ================= -->
+      <!-- Left Outer Wing Elytra -->
+      <polygon points="-80,45 -180,180 -130,275 -75,210" fill="url(#slate-deep)" />
+      <polygon points="-130,275 -55,345 -45,280 -75,210" fill="url(#slate-dark)" />
+
+      <!-- Right Outer Wing Elytra -->
+      <polygon points="80,45 180,180 130,275 75,210" fill="url(#slate-deep)" />
+      <polygon points="130,275 55,345 45,280 75,210" fill="url(#slate-dark)" />
+
+      <!-- Abdominal Segment Plates (Descending Tail Spire) -->
+      <polygon points="0,370 -55,345 0,315" fill="url(#slate-dark)" />
+      <polygon points="0,370 0,315 55,345" fill="url(#slate-deep)" />
+      <polygon points="0,315 -45,280 0,235" fill="url(#slate-mid)" />
+      <polygon points="0,315 0,235 45,280" fill="url(#slate-dark)" />
+      <polygon points="0,235 -60,195 0,140" fill="url(#slate-light)" />
+      <polygon points="0,235 0,140 60,195" fill="url(#slate-mid)" />
+
+      <!-- ================= SEGMENTED PRONOTUM (ARMORED NECK) ================= -->
+      <polygon points="0,-145 -30,-90 0,-70" fill="url(#slate-highlight)" />
+      <polygon points="0,-145 0,-70 30,-90" fill="url(#slate-light)" />
+      <polygon points="0,-70 -45,-30 0,-5" fill="url(#slate-light)" />
+      <polygon points="0,-70 0,-5 45,-30" fill="url(#slate-mid)" />
+
+      <!-- Lateral Thorax Shield -->
+      <polygon points="-45,-30 0,-5 0,40 -65,30" fill="url(#slate-dark)" />
+      <polygon points="45,-30 0,-5 0,40 65,30" fill="url(#slate-deep)" />
+      <polygon points="-65,30 0,40 -80,45" fill="url(#slate-deep)" />
+      <polygon points="65,30 0,40 80,45" fill="url(#slate-deep)" />
+
+      <!-- ================= RAPTORIAL HOOK-ARMS (THE TRAP MECHANISM) ================= -->
+      <!-- LEFT ARM: Shoulder & Femur (Raised Strike Posture) -->
+      <polygon points="-45,-50 -120,-110 -160,-75" fill="url(#slate-highlight)" />
+      <polygon points="-45,-50 -160,-75 -65,-30" fill="url(#slate-light)" />
+      <polygon points="-120,-110 -260,-165 -160,-75" fill="url(#slate-highlight)" />
+      <polygon points="-260,-165 -295,-115 -195,-60" fill="url(#slate-light)" />
+      <polygon points="-260,-165 -195,-60 -160,-75" fill="url(#slate-mid)" />
+
+      <!-- LEFT CLAW: Tibia & Inward Predatory Hook Clasp -->
+      <polygon points="-295,-115 -280,20 -210,-10" fill="url(#slate-mid)" />
+      <polygon points="-295,-115 -210,-10 -195,-60" fill="url(#slate-dark)" />
+      <polygon points="-280,20 -210,115 -170,40" fill="url(#slate-light)" />
+      <polygon points="-280,20 -170,40 -210,-10" fill="url(#slate-mid)" />
+
+      <!-- Left Hook Terminal Claws & Razor Serrations (Electric Cyan & Teal Accents) -->
+      <polygon points="-210,115 -135,75 -170,40" fill="url(#slate-dark)" />
+      <polygon points="-170,40 -135,75 -90,75" fill="url(#cyan-glow)" filter="url(#core-glow)" />
+      <polygon points="-170,40 -90,75 -140,25" fill="url(#teal-accent)" />
+      <polygon points="-140,25 -90,75 -115,10" fill="#00f5ff" opacity="0.95" />
+
+      <!-- RIGHT ARM: Shoulder & Femur (Raised Strike Posture) -->
+      <polygon points="45,-50 120,-110 160,-75" fill="url(#slate-light)" />
+      <polygon points="45,-50 160,-75 65,-30" fill="url(#slate-mid)" />
+      <polygon points="120,-110 260,-165 160,-75" fill="url(#slate-light)" />
+      <polygon points="260,-165 295,-115 195,-60" fill="url(#slate-mid)" />
+      <polygon points="260,-165 195,-60 160,-75" fill="url(#slate-dark)" />
+
+      <!-- RIGHT CLAW: Tibia & Inward Predatory Hook Clasp -->
+      <polygon points="295,-115 280,20 210,-10" fill="url(#slate-dark)" />
+      <polygon points="295,-115 210,-10 195,-60" fill="url(#slate-deep)" />
+      <polygon points="280,20 210,115 170,40" fill="url(#slate-mid)" />
+      <polygon points="280,20 170,40 210,-10" fill="url(#slate-dark)" />
+
+      <!-- Right Hook Terminal Claws & Razor Serrations (Electric Cyan & Teal Accents) -->
+      <polygon points="210,115 135,75 170,40" fill="url(#slate-deep)" />
+      <polygon points="170,40 135,75 90,75" fill="url(#cyan-glow)" filter="url(#core-glow)" />
+      <polygon points="170,40 90,75 140,25" fill="url(#teal-accent)" />
+      <polygon points="140,25 90,75 115,10" fill="#00f5ff" opacity="0.95" />
+
+      <!-- ================= SENSORY WIRE ANTENNAE ================= -->
+      <!-- Center Head Crest -->
+      <polygon points="0,-365 25,-295 0,-275 -25,-295" fill="url(#slate-light)" />
+
+      <!-- Left Wire Antenna Blade -->
+      <polygon points="-25,-295 -95,-355 -60,-275" fill="url(#slate-mid)" />
+      <polygon points="-60,-275 -95,-355 -45,-265" fill="url(#cyan-glow)" />
+      <circle cx="-95" cy="-355" r="5" fill="#00f5ff" filter="url(#core-glow)" />
+
+      <!-- Right Wire Antenna Blade -->
+      <polygon points="25,-295 95,-355 60,-275" fill="url(#slate-dark)" />
+      <polygon points="60,-275 95,-355 45,-265" fill="url(#cyan-glow)" />
+      <circle cx="95" cy="-355" r="5" fill="#00f5ff" filter="url(#core-glow)" />
+
+      <!-- ================= TRIANGULAR HERALDIC HEAD ================= -->
+      <!-- Forehead Central Diamond Plate -->
+      <polygon points="0,-275 45,-235 0,-195 -45,-235" fill="url(#slate-highlight)" />
+
+      <!-- Brow Ridges -->
+      <polygon points="-45,-235 0,-195 -45,-175 -75,-215" fill="url(#slate-light)" />
+      <polygon points="45,-235 0,-195 45,-175 75,-215" fill="url(#slate-light)" />
+
+      <!-- Lower Face & Mandible Shield -->
+      <polygon points="0,-195 -30,-160 0,-145" fill="url(#slate-mid)" />
+      <polygon points="0,-195 0,-145 30,-160" fill="url(#slate-dark)" />
+      <polygon points="-45,-175 -30,-160 0,-145 -15,-130" fill="url(#slate-deep)" />
+      <polygon points="45,-175 30,-160 0,-145 15,-130" fill="url(#slate-deep)" />
+
+      <!-- ================= COMPOUND FACETED OPTICS (THE PREDATOR EYES) ================= -->
+      <!-- Left Compound Eye Socket -->
+      <polygon points="-45,-235 -125,-255 -80,-215 -45,-175" fill="#04060c" />
+      <!-- Left Eye Facets (Slanted Almond Cant, Wide Outward Angle) -->
+      <polygon points="-52,-230 -118,-248 -78,-210" fill="url(#cyan-glow)" filter="url(#core-glow)" />
+      <polygon points="-78,-210 -118,-248 -76,-195" fill="#0284c7" />
+      <!-- Left Eye Slit Pupil Highlight -->
+      <polygon points="-72,-235 -105,-244 -74,-218" fill="#ffffff" opacity="0.95" />
+
+      <!-- Right Compound Eye Socket -->
+      <polygon points="45,-235 125,-255 80,-215 45,-175" fill="#04060c" />
+      <!-- Right Eye Facets (Slanted Almond Cant, Wide Outward Angle) -->
+      <polygon points="52,-230 118,-248 78,-210" fill="url(#cyan-glow)" filter="url(#core-glow)" />
+      <polygon points="78,-210 118,-248 76,-195" fill="#0284c7" />
+      <!-- Right Eye Slit Pupil Highlight -->
+      <polygon points="72,-235 105,-244 74,-218" fill="#ffffff" opacity="0.95" />
+
+      <!-- ================= TRAPPED WEBHOOK PAYLOAD (THE DATA TOKEN) ================= -->
+      <!-- Held directly inside the clasp of the two hook tips at (0, 75) -->
+      <g filter="url(#core-glow)" transform="translate(0, 75)">
+        <!-- Outer Glowing Hexagonal Payload Token -->
+        <polygon points="
+          0,-44
+          38,-22
+          38,22
+          0,44
+          -38,22
+          -38,-22
+        " fill="url(#cyan-glow)" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" />
+
+        <!-- Inner Cryptographic Trap Chamber -->
+        <polygon points="
+          0,-32
+          26,-16
+          26,16
+          0,32
+          -26,16
+          -26,-16
+        " fill="#060911" stroke="#00f5ff" stroke-width="2" />
+
+        <!-- Webhook Catch Pin / Terminal Node -->
+        <circle cx="0" cy="0" r="7.5" fill="#ffffff" />
+        <circle cx="0" cy="0" r="4" fill="#060911" />
+        
+        <!-- Precision Laser Guidance Line to Left & Right Claws -->
+        <line x1="-38" y1="0" x2="-80" y2="0" stroke="#00f5ff" stroke-width="2.5" stroke-dasharray="5, 3" />
+        <line x1="38" y1="0" x2="80" y2="0" stroke="#00f5ff" stroke-width="2.5" stroke-dasharray="5, 3" />
+      </g>
+
+    </g>
+  </g>
+</svg>

@@ -1,13 +1,28 @@
-# hook-trap
+<p align="center">
+  <img src="docs/images/logo.png?raw=true" alt="hook-trap Logo" width="140" style="border-radius: 28px;" />
+</p>
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-
-A lightweight webhook inspector, debugger, and local forwarding proxy built with FastAPI, WebSockets, and SQLite.
-
-When you develop applications that receive webhooks from Stripe, GitHub, Shopify, or Twilio, testing endpoints locally usually requires third party tunnel services or repeated manual requests. `hook-trap` runs locally, receives incoming payloads on isolated channel URLs, logs them in SQLite, streams them in real time over WebSockets to a dark mode dashboard, and replays them to your development server with one click.
+<h1 align="center">hook-trap</h1>
 
 <p align="center">
-  <img src="docs/images/hook_trap_demo.gif" alt="hook-trap Interactive Demo" width="850" />
+  <b>Real-Time Webhook Inspector, Debugger & Local Replay Proxy</b>
+</p>
+
+<p align="center">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License: MIT" /></a>
+  <img src="https://img.shields.io/badge/Python-3.12+-3776AB.svg?logo=python&logoColor=white" alt="Python 3.12+" />
+  <img src="https://img.shields.io/badge/FastAPI-0.115+-009688.svg?logo=fastapi&logoColor=white" alt="FastAPI" />
+  <img src="https://img.shields.io/badge/WebSocket-Real--Time-00f5ff.svg" alt="WebSocket Real-Time" />
+  <img src="https://img.shields.io/badge/SQLite-WAL-003B57.svg?logo=sqlite&logoColor=white" alt="SQLite" />
+  <a href="https://github.com/alexandrmotologa/hooktrap-live"><img src="https://img.shields.io/badge/Companion-HookTrap_Live-10b981.svg" alt="Companion: HookTrap Live" /></a>
+</p>
+
+<p align="center">
+  When you develop applications that receive webhooks from Stripe, GitHub, Shopify, or Twilio, testing endpoints locally usually requires third-party tunnel services or repeated manual requests. <code>hook-trap</code> runs locally, receives incoming payloads on isolated channel URLs, logs them in SQLite, streams them in real time over WebSockets to a dark mode dashboard, and replays them to your development server with one click.
+</p>
+
+<p align="center">
+  <img src="docs/images/hook_trap_demo.gif" alt="hook-trap Interactive Demo" width="850" style="border-radius: 10px; border: 1px solid #1e293b;" />
 </p>
 
 ## Screenshots
@@ -34,6 +49,20 @@ When you develop applications that receive webhooks from Stripe, GitHub, Shopify
 
 </details>
 
+---
+
+## Brand Mascot: The Wire Mantis
+
+`hook-trap` is represented by the **Wire Mantis** (*Mantis Intercepta*).
+
+In nature, the praying mantis sits motionless on branches, tracking movement across a 180-degree visual arc with wide multifaceted compound optics. The microsecond prey enters strike range, its raptorial forelegs snap shut in under 50 milliseconds—trapping and holding the target in an unbreakable grip.
+
+`hook-trap` brings that exact predatory vigilance to modern API development:
+- **Raptorial Hook Claws (`#00f5ff` & `#10b981`)**: Snatches incoming HTTP webhooks off the wire and holds raw request bytes without corruption.
+- **Sensory Wire Antennae**: Real-time WebSocket streaming and terminal live tailing that detect deliveries instantaneously.
+- **Obsidian & Slate Carapace (`#060911` — `#475569`)**: Local-first persistence backed by SQLite WAL, preserving exact HMAC signatures (`Stripe-Signature`, `X-Hub-Signature-256`, `X-Shopify-Hmac-Sha256`) for one-click replay.
+
+---
 
 ## Features
 
