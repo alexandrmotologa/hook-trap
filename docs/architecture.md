@@ -14,6 +14,8 @@ flowchart TD
         DB[(SQLite WAL Database)]
         WSManager["WebSocket Connection Manager"]
         Forwarder["HTTP Replay / Forward Engine (httpx)"]
+        ScenarioRunner["Scenario Sequence Runner"]
+        PayloadFuzzer["Payload Fuzzing Engine"]
     end
     Browser["Inspector UI (Browser Dashboard)"]
     LocalApp["Local Dev Server (http://localhost:3000)"]
@@ -24,6 +26,11 @@ flowchart TD
     WSManager -->|WebSocket /ws/{channel}| Browser
     CatchRoute -.->|Optional Auto-Forward| Forwarder
     Browser -->|1-Click Replay POST| Forwarder
+    Browser -->|Trigger Scenario Run| ScenarioRunner
+    Browser -->|Trigger Fuzz Suite| PayloadFuzzer
+    ScenarioRunner -->|Sequential Replay with Delays| LocalApp
+    PayloadFuzzer -->|Mutated Payloads| LocalApp
+    ScenarioRunner -->|Broadcast step progress| WSManager
     Forwarder -->|HTTP Request with original headers| LocalApp
     LocalApp -->|Response status & body| Forwarder
     Forwarder -->|Record latency & status| DB
@@ -43,11 +50,11 @@ Key behaviors:
 - Inserts the request into SQLite and dispatches a notification through the WebSocket manager.
 - If the channel has an auto-forward URL configured, schedules an asynchronous background task to forward the payload.
 
-### Persistence layer (`hook_trap/database.py`)
+### Persistence layer (`hook_trap/database.py` & `hook_trap/repositories/`)
 
-Data is stored in SQLite using `aiosqlite`. WAL (Write-Ahead Logging) mode is enabled by default to allow concurrent reads and writes without locking.
+Data is stored in SQLite using `aiosqlite`. WAL (Write-Ahead Logging) mode is enabled by default to allow concurrent reads and writes without locking. Foreign key constraints are enforced on every connection (`PRAGMA foreign_keys = ON;`).
 
-Three tables are maintained:
+Five tables are maintained:
 
 1. `webhook_requests`: Stores captured requests.
    - `id`: UUIDv4 primary key.
@@ -81,6 +88,27 @@ Three tables are maintained:
    - `created_at`: Creation timestamp.
    - `updated_at`: Last update timestamp.
 
+4. `scenarios`: Stores multi-step test workflows.
+   - `id`: Unique scenario identifier (e.g. `scn_...`).
+   - `channel_id`: Foreign key referencing `channels(channel_id)` with cascading deletion.
+   - `name`: Human-readable title of the scenario workflow.
+   - `description`: Optional detailed notes.
+   - `created_at`: Creation ISO timestamp.
+   - `updated_at`: Last update ISO timestamp.
+
+5. `scenario_steps`: Ordered execution steps belonging to a scenario.
+   - `id`: Unique step identifier (e.g. `step_...`).
+   - `scenario_id`: Foreign key referencing `scenarios(id)` with cascading deletion.
+   - `step_order`: Positive integer ordering sequence (1, 2, 3...).
+   - `name`: Descriptive step label.
+   - `method`: HTTP method to replay with.
+   - `path_suffix`: Optional path appended to target URL (e.g. `/v1/events`).
+   - `headers`: JSON string of custom or captured headers.
+   - `body_raw`: Body string to dispatch.
+   - `expected_status`: Expected HTTP status code (default `200`).
+   - `delay_ms`: Configurable pause in milliseconds before executing this step.
+   - `created_at`: Creation ISO timestamp.
+
 ### Real-time streaming (`hook_trap/ws_manager.py` & `hook_trap/routes/websocket.py`)
 
 The `ConnectionManager` class tracks active WebSocket connections grouped by channel ID.
@@ -89,6 +117,7 @@ The `ConnectionManager` class tracks active WebSocket connections grouped by cha
 - When an incoming webhook is stored, `broadcast(channel_id, payload)` sends the event to all subscribers.
 - Dead connections are automatically removed on send failure or disconnect.
 - The connection keeps alive using periodic 30-second heartbeats.
+- Real-time sequence runner progress is streamed via `scenario_run_started`, `scenario_step_completed`, and `scenario_run_completed` events.
 
 ### Forwarding and replay engine (`hook_trap/forwarder.py`)
 
@@ -99,6 +128,23 @@ The forwarding engine sends captured requests to local or remote endpoints using
 - High-precision timing: Measures round-trip latency using `time.perf_counter()`.
 - Error resilience: Catches timeouts, connection refusals, and DNS errors, recording the failure reason in SQLite without crashing the server.
 
+### Scenario sequence runner (`hook_trap/services/scenario_runner.py`)
+
+Executes ordered multi-step webhook flows against target local or staging servers.
+- Manages sequential execution with `asyncio.sleep(delay_ms / 1000)`.
+- Compares received status codes against `expected_status` assertions.
+- Live streams each step's latency, status, and outcome to WebSocket listeners.
+
+### Payload fuzzing & mutation engine (`hook_trap/services/payload_fuzzer.py`)
+
+Stress tests endpoints by applying deterministic mutation operators to captured payloads:
+- Missing Key: Iteratively omits top-level keys.
+- Null Injection: Injects null values into existing fields.
+- Type Confusion: Replaces strings/numbers with boolean, object, or array types.
+- Signature Corruption: Replaces HMAC signature headers with invalid hashes.
+- Malformed JSON: Truncates or introduces syntax errors into JSON bodies.
+- Resilience Grading: Grades responses (`PASSED` for handled 4xx, `VULNERABLE` for unhandled 5xx/crashes, `ACCEPTED` for 2xx).
+
 ### User interface (`hook_trap/static/`)
 
 The dashboard is delivered as static files (`index.html`, `style.css`, `app.js`) without a build step.
@@ -106,4 +152,5 @@ The dashboard is delivered as static files (`index.html`, `style.css`, `app.js`)
 - Dark-themed interface with high contrast.
 - Split-pane layout: Ingestion controls and scrollable request list on the left, detailed tabs on the right.
 - Live DOM insertion on WebSocket events without requiring full page refreshes.
+- Modals for scenarios management, step creation, and fuzz test execution with visual resilience badges.
 - Zero external node package dependencies.

@@ -262,6 +262,219 @@ Supported providers: `stripe`, `github`, `shopify`, `generic`.
 
 ---
 
+## Workflow Scenarios & Sequence Runner Endpoints
+
+### List Channel Scenarios
+
+Lists all configured multi-step workflow scenarios for a channel.
+
+- **Route**: `GET /api/scenarios?channel_id={channel_id}`
+
+#### Response
+
+```json
+[
+  {
+    "id": "scn_550e8400-e29b-41d4-a716-446655440000",
+    "channel_id": "a1b2c3d4",
+    "name": "Order Checkout Sequence",
+    "description": "Tests full customer creation and charge sequence",
+    "created_at": "2026-09-17T15:00:00Z",
+    "updated_at": "2026-09-17T15:00:00Z",
+    "steps": [
+      {
+        "id": "step_770e8400-e29b-41d4-a716-446655440000",
+        "scenario_id": "scn_550e8400-e29b-41d4-a716-446655440000",
+        "step_order": 1,
+        "name": "1. customer.created",
+        "method": "POST",
+        "path_suffix": "/v1/events",
+        "headers": { "content-type": "application/json" },
+        "body_raw": "{\"type\":\"customer.created\"}",
+        "expected_status": 200,
+        "delay_ms": 100,
+        "created_at": "2026-09-17T15:00:00Z"
+      }
+    ]
+  }
+]
+```
+
+### Create Scenario
+
+Creates a new workflow scenario.
+
+- **Route**: `POST /api/scenarios`
+- **Request body**:
+
+```json
+{
+  "channel_id": "a1b2c3d4",
+  "name": "Order Checkout Sequence",
+  "description": "Tests customer creation and charge sequence"
+}
+```
+
+### Get Scenario Details
+
+- **Route**: `GET /api/scenarios/{scenario_id}`
+
+### Update Scenario
+
+- **Route**: `PUT /api/scenarios/{scenario_id}`
+- **Request body**:
+
+```json
+{
+  "name": "Updated Scenario Name",
+  "description": "Updated description"
+}
+```
+
+### Delete Scenario
+
+Deletes a scenario and all its associated steps.
+
+- **Route**: `DELETE /api/scenarios/{scenario_id}`
+
+### Add Scenario Step
+
+Appends a new step to the scenario.
+
+- **Route**: `POST /api/scenarios/{scenario_id}/steps`
+- **Request body**:
+
+```json
+{
+  "name": "2. payment_intent.succeeded",
+  "method": "POST",
+  "path_suffix": "/v1/events",
+  "headers": { "content-type": "application/json" },
+  "body_raw": "{\"type\":\"payment_intent.succeeded\",\"amount\":2000}",
+  "expected_status": 200,
+  "delay_ms": 250
+}
+```
+
+### Delete Scenario Step
+
+- **Route**: `DELETE /api/scenarios/{scenario_id}/steps/{step_id}`
+
+### Run Scenario Sequence
+
+Executes all steps in sequential order against a target destination URL, enforcing delays and status assertions.
+
+- **Route**: `POST /api/scenarios/{scenario_id}/run`
+- **Request body**:
+
+```json
+{
+  "target_url": "http://localhost:3000/api/webhook"
+}
+```
+
+#### Response
+
+```json
+{
+  "scenario_id": "scn_550e8400-e29b-41d4-a716-446655440000",
+  "name": "Order Checkout Sequence",
+  "target_url": "http://localhost:3000/api/webhook",
+  "success": true,
+  "total_steps": 2,
+  "passed_steps": 2,
+  "failed_steps": 0,
+  "total_duration_ms": 385.2,
+  "step_results": [
+    {
+      "step_id": "step_770e8400-e29b-41d4-a716-446655440000",
+      "step_order": 1,
+      "name": "1. customer.created",
+      "target_url": "http://localhost:3000/api/webhook/v1/events",
+      "status_code": 200,
+      "expected_status": 200,
+      "passed": true,
+      "latency_ms": 22.4,
+      "error": null,
+      "response_body_preview": "{\"status\":\"ok\"}"
+    }
+  ]
+}
+```
+
+---
+
+## Payload Fuzzing & Mutation Testing Endpoints
+
+### Run Fuzzing on Stored Request
+
+Generates mutations for a captured webhook request and replays each mutated payload against the target URL.
+
+- **Route**: `POST /api/channels/{channel_id}/requests/{request_id}/fuzz`
+- **Request body**:
+
+```json
+{
+  "target_url": "http://localhost:3000/api/webhook",
+  "mutate_missing_key": true,
+  "mutate_null_injection": true,
+  "mutate_type_confusion": true,
+  "mutate_corrupted_signature": true,
+  "mutate_malformed_json": true
+}
+```
+
+#### Response
+
+```json
+{
+  "target_url": "http://localhost:3000/api/webhook",
+  "total_cases": 5,
+  "passed_count": 4,
+  "vulnerable_count": 0,
+  "accepted_count": 1,
+  "overall_grade": "PASSED",
+  "results": [
+    {
+      "mutation_type": "missing_key",
+      "description": "Omit field 'id'",
+      "target_url": "http://localhost:3000/api/webhook",
+      "status_code": 400,
+      "latency_ms": 15.2,
+      "resilience_grade": "PASSED",
+      "error": null,
+      "payload_preview": "{\"event\":\"payment_intent.succeeded\"}"
+    }
+  ]
+}
+```
+
+### Run Custom Fuzz Suite
+
+Runs custom mutation test cases against a target URL.
+
+- **Route**: `POST /api/scenarios/fuzz/run`
+- **Request body**:
+
+```json
+{
+  "target_url": "http://localhost:3000/api/webhook",
+  "channel_id": "a1b2c3d4",
+  "cases": [
+    {
+      "mutation_type": "malformed_json",
+      "description": "Syntax error test",
+      "method": "POST",
+      "path_suffix": "",
+      "headers": { "content-type": "application/json" },
+      "body_raw": "{invalid json syntax"
+    }
+  ]
+}
+```
+
+---
+
 ## WebSocket Protocol
 
 Connect to the channel stream at:
@@ -320,6 +533,60 @@ Dispatched when a replay completes:
     "status_code": 200,
     "latency_ms": 32.1,
     "error": null
+  }
+}
+```
+
+### Event: `scenario_run_started`
+
+Dispatched when a sequence scenario begins running:
+
+```json
+{
+  "event": "scenario_run_started",
+  "data": {
+    "scenario_id": "scn_550e8400-e29b-41d4-a716-446655440000",
+    "name": "Order Checkout Sequence",
+    "total_steps": 3,
+    "target_url": "http://localhost:3000/api/webhook"
+  }
+}
+```
+
+### Event: `scenario_step_completed`
+
+Dispatched when an individual scenario step finishes execution:
+
+```json
+{
+  "event": "scenario_step_completed",
+  "data": {
+    "scenario_id": "scn_550e8400-e29b-41d4-a716-446655440000",
+    "step_id": "step_770e8400-e29b-41d4-a716-446655440000",
+    "step_order": 1,
+    "name": "1. customer.created",
+    "status_code": 200,
+    "expected_status": 200,
+    "passed": true,
+    "latency_ms": 25.3,
+    "error": null
+  }
+}
+```
+
+### Event: `scenario_run_completed`
+
+Dispatched when the complete scenario run finishes:
+
+```json
+{
+  "event": "scenario_run_completed",
+  "data": {
+    "scenario_id": "scn_550e8400-e29b-41d4-a716-446655440000",
+    "success": true,
+    "passed_steps": 3,
+    "failed_steps": 0,
+    "total_duration_ms": 420.5
   }
 }
 ```

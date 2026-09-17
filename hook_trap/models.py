@@ -110,3 +110,193 @@ class SignatureVerifyResponse(BaseModel):
     valid: bool
     message: str
     details: dict[str, str] = Field(default_factory=dict)
+
+
+# --- Scenario Sequence Runner Models ---
+
+
+class ScenarioStepCreate(BaseModel):
+    """Payload to create a new step in a scenario sequence."""
+
+    name: str
+    method: str = "POST"
+    path_suffix: str = ""
+    headers: dict[str, str] = Field(default_factory=dict)
+    payload_raw: str = ""
+    expected_status: int = 200
+
+
+class ScenarioStep(BaseModel):
+    """Full detail of a scenario step."""
+
+    id: str
+    scenario_id: str
+    step_order: int
+    name: str
+    method: str = "POST"
+    path_suffix: str = ""
+    headers: dict[str, str] = Field(default_factory=dict)
+    payload_raw: str = ""
+    expected_status: int = 200
+
+
+class ScenarioCreate(BaseModel):
+    """Payload to create a new webhook scenario."""
+
+    channel_id: str
+    name: str
+    description: str | None = None
+    target_url: str
+    delay_between_steps_ms: int = 500
+    steps: list[ScenarioStepCreate] = Field(default_factory=list)
+
+
+class ScenarioUpdate(BaseModel):
+    """Payload to update an existing scenario."""
+
+    name: str | None = None
+    description: str | None = None
+    target_url: str | None = None
+    delay_between_steps_ms: int | None = None
+    steps: list[ScenarioStepCreate] | None = None
+
+
+class Scenario(BaseModel):
+    """Stored scenario entity with ordered steps."""
+
+    id: str
+    channel_id: str
+    name: str
+    description: str | None = None
+    target_url: str
+    delay_between_steps_ms: int = 500
+    created_at: str
+    steps: list[ScenarioStep] = Field(default_factory=list)
+
+
+class ScenarioRunRequest(BaseModel):
+    """Optional run parameter overrides."""
+
+    target_url: str | None = None
+
+
+class ScenarioStepResult(BaseModel):
+    """Execution assertion result for a single scenario step."""
+
+    step_id: str
+    step_name: str
+    step_order: int
+    method: str
+    url: str
+    expected_status: int
+    actual_status: int | None = None
+    latency_ms: float = 0.0
+    passed: bool
+    response_body: str = ""
+    error: str | None = None
+
+
+class ScenarioRunResult(BaseModel):
+    """Complete summary of a scenario sequence execution."""
+
+    scenario_id: str
+    scenario_name: str
+    target_url: str
+    total_steps: int
+    passed_steps: int
+    failed_steps: int
+    success: bool
+    total_duration_ms: float
+    step_results: list[ScenarioStepResult] = Field(default_factory=list)
+
+
+# --- Payload Fuzzing Engine Models ---
+
+
+class FuzzMutationType(StrEnum):
+    """Supported payload mutation strategies."""
+
+    MISSING_KEY = "missing_key"
+    NULL_INJECTION = "null_injection"
+    TYPE_CONFUSION = "type_confusion"
+    CORRUPTED_SIGNATURE = "corrupted_signature"
+    MALFORMED_JSON = "malformed_json"
+
+
+class FuzzResilienceGrade(StrEnum):
+    """Resilience grading evaluation."""
+
+    PASSED = "PASSED"  # Graceful 4xx client rejection
+    VULNERABLE = "VULNERABLE"  # Unhandled 5xx server crash or connection termination
+    ACCEPTED = "ACCEPTED"  # 2xx accepted invalid / mutated input
+    ERROR = "ERROR"  # Connection error / timeout
+
+
+class FuzzingConfig(BaseModel):
+    """Configuration options for payload fuzzing."""
+
+    enabled_mutations: list[str] = Field(
+        default_factory=lambda: [
+            FuzzMutationType.MISSING_KEY,
+            FuzzMutationType.NULL_INJECTION,
+            FuzzMutationType.TYPE_CONFUSION,
+            FuzzMutationType.CORRUPTED_SIGNATURE,
+            FuzzMutationType.MALFORMED_JSON,
+        ]
+    )
+    max_mutations: int = 25
+
+
+class FuzzMutationCase(BaseModel):
+    """A generated payload mutation test case."""
+
+    case_id: str
+    mutation_name: str
+    mutation_type: str
+    field_path: str | None = None
+    description: str
+    mutated_payload: str
+    mutated_headers: dict[str, str] = Field(default_factory=dict)
+
+
+class FuzzTestResult(BaseModel):
+    """Result of executing a single mutated test case against the target."""
+
+    case_id: str
+    mutation_name: str
+    mutation_type: str
+    field_path: str | None = None
+    description: str
+    status_code: int | None = None
+    latency_ms: float = 0.0
+    resilience_grade: str
+    passed: bool
+    response_body: str = ""
+    error: str | None = None
+
+
+class FuzzRunRequest(BaseModel):
+    """Payload to trigger payload fuzzing against a target URL."""
+
+    target_url: str
+    method: str = "POST"
+    headers: dict[str, str] = Field(default_factory=dict)
+    payload_raw: str = ""
+    config: FuzzingConfig = Field(default_factory=FuzzingConfig)
+    timeout: float = 5.0
+    channel_id: str | None = None
+
+
+class FuzzRunResult(BaseModel):
+    """Complete summary of a fuzzing test suite execution."""
+
+    target_url: str
+    total_cases: int
+    passed_count: int
+    vulnerable_count: int
+    accepted_count: int
+    error_count: int
+    all_passed: bool
+    summary: str
+    cases: list[FuzzTestResult] = Field(default_factory=list)
+

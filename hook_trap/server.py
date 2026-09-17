@@ -12,9 +12,11 @@ from hook_trap.config import settings
 from hook_trap.database import init_db
 from hook_trap.routes.api import router as api_router
 from hook_trap.routes.catch import router as catch_router
+from hook_trap.routes.scenarios import router as scenarios_router
 from hook_trap.routes.websocket import router as ws_router
 
 STATIC_DIR = Path(__file__).parent / "static"
+
 
 
 @asynccontextmanager
@@ -62,7 +64,9 @@ def create_app(
     # Mount routers
     app.include_router(catch_router)
     app.include_router(api_router)
+    app.include_router(scenarios_router)
     app.include_router(ws_router)
+
 
     @app.get("/healthz")
     async def health_check() -> dict[str, str]:

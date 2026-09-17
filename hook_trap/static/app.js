@@ -14,6 +14,8 @@
   let activePayloadView = "formatted"; // "formatted" | "raw"
   let publicTunnelUrl = null;
   let isViewingPublicUrl = false;
+  let activeScenarios = [];
+
 
   // Sample templates for quick mock webhook sending
   const SAMPLE_TEMPLATES = {
@@ -212,7 +214,54 @@
 
     shortcutsModal: document.getElementById("shortcuts-modal"),
     btnShortcutsModal: document.getElementById("btn-shortcuts-modal"),
+
+    // Scenarios Modal Elements
+    scenariosModal: document.getElementById("scenarios-modal"),
+    btnOpenScenariosModal: document.getElementById("btn-open-scenarios-modal"),
+    btnToggleCreateScenario: document.getElementById("btn-toggle-create-scenario"),
+    scenarioCreateBox: document.getElementById("scenario-create-box"),
+    scenNameInput: document.getElementById("scen-name-input"),
+    scenTargetInput: document.getElementById("scen-target-input"),
+    scenDescInput: document.getElementById("scen-desc-input"),
+    scenDelayInput: document.getElementById("scen-delay-input"),
+    btnCancelScenario: document.getElementById("btn-cancel-scenario"),
+    btnSaveScenario: document.getElementById("btn-save-scenario"),
+    scenarioRunBanner: document.getElementById("scenario-run-banner"),
+    scenarioRunTitle: document.getElementById("scenario-run-title"),
+    scenarioRunStatusBadge: document.getElementById("scenario-run-status-badge"),
+    scenarioRunDetails: document.getElementById("scenario-run-details"),
+    scenarioRunTbody: document.getElementById("scenario-run-tbody"),
+    scenariosListContainer: document.getElementById("scenarios-list-container"),
+
+    // Add to Scenario Modal Elements
+    addToScenarioModal: document.getElementById("add-to-scenario-modal"),
+    btnAddScenario: document.getElementById("btn-add-to-scenario"),
+    addStepScenarioSelect: document.getElementById("add-step-scenario-select"),
+    addStepNameInput: document.getElementById("add-step-name-input"),
+    addStepPathInput: document.getElementById("add-step-path-input"),
+    addStepStatusInput: document.getElementById("add-step-status-input"),
+    btnConfirmAddStep: document.getElementById("btn-confirm-add-step"),
+
+    // Fuzzing Suite Elements
+    fuzzModal: document.getElementById("fuzz-modal"),
+    btnFuzzRequest: document.getElementById("btn-fuzz-request"),
+    fuzzTargetInput: document.getElementById("fuzz-target-input"),
+    fuzzMaxInput: document.getElementById("fuzz-max-input"),
+    fuzzOpMissingKey: document.getElementById("fuzz-op-missing-key"),
+    fuzzOpNullInjection: document.getElementById("fuzz-op-null-injection"),
+    fuzzOpTypeConfusion: document.getElementById("fuzz-op-type-confusion"),
+    fuzzOpCorruptedSig: document.getElementById("fuzz-op-corrupted-sig"),
+    fuzzOpMalformedJson: document.getElementById("fuzz-op-malformed-json"),
+    fuzzSelectedReqInfo: document.getElementById("fuzz-selected-req-info"),
+    btnStartFuzz: document.getElementById("btn-start-fuzz"),
+    fuzzSummaryCard: document.getElementById("fuzz-summary-card"),
+    fuzzSummaryTitle: document.getElementById("fuzz-summary-title"),
+    fuzzBadgesRow: document.getElementById("fuzz-badges-row"),
+    fuzzSummaryText: document.getElementById("fuzz-summary-text"),
+    fuzzResultsContainer: document.getElementById("fuzz-results-container"),
+    fuzzResultsTbody: document.getElementById("fuzz-results-tbody"),
   };
+
 
   // Initialize Channel & Check System Status
   async function initChannel() {
@@ -328,9 +377,16 @@
           handleIncomingRequest(msg.data);
         } else if (msg.event === "replay_executed") {
           handleIncomingReplay(msg.data);
+        } else if (msg.event === "scenario_run_started") {
+          handleScenarioRunStarted(msg.data);
+        } else if (msg.event === "scenario_step_completed") {
+          handleScenarioStepCompleted(msg.data);
+        } else if (msg.event === "scenario_run_completed") {
+          handleScenarioRunCompleted(msg.data);
         } else if (msg.event === "ping") {
           socket.send("pong");
         }
+
       } catch (err) {
         console.warn("WebSocket parse error", err);
       }
@@ -1007,7 +1063,11 @@ print(response.text)
       } else if (e.key === "e") {
         e.preventDefault();
         openExportModal();
+      } else if (e.key === "f") {
+        e.preventDefault();
+        openFuzzModal();
       } else if (e.key === "/") {
+
         e.preventDefault();
         els.searchInput.focus();
       } else if (e.key === "?") {
@@ -1103,10 +1163,425 @@ print(response.text)
     setTimeout(() => feedback.remove(), 2500);
   }
 
+  // --- Scenario Sequences Management ---
+  async function fetchScenarios() {
+    try {
+      const res = await fetch(`/api/scenarios?channel_id=${encodeURIComponent(channelId)}`);
+      if (res.ok) {
+        activeScenarios = await res.json();
+        renderScenariosList();
+      }
+    } catch (err) {
+      console.error("Failed to load scenarios", err);
+    }
+  }
+
+  function openScenariosModal() {
+    els.scenariosModal.classList.remove("hidden");
+    els.scenarioCreateBox.classList.add("hidden");
+    els.scenarioRunBanner.classList.add("hidden");
+    fetchScenarios();
+  }
+
+  function renderScenariosList() {
+    if (!els.scenariosListContainer) return;
+    if (activeScenarios.length === 0) {
+      els.scenariosListContainer.innerHTML = `
+        <div class="empty-state" style="padding:24px 0;">
+          <div class="empty-icon">📜</div>
+          <div class="empty-title">No scenarios yet</div>
+          <div class="empty-desc">Click "+ New Scenario" or click "+ Scenario" on a captured webhook to build workflow sequences.</div>
+        </div>
+      `;
+      return;
+    }
+
+    els.scenariosListContainer.innerHTML = activeScenarios
+      .map((sc) => {
+        const stepsHtml = (sc.steps || [])
+          .map(
+            (st) => `
+          <div class="scenario-step-item">
+            <div class="step-info">
+              <span class="step-order-badge">#${st.step_order}</span>
+              <span class="method-tag method-${st.method.toLowerCase()}">${st.method}</span>
+              <span style="font-family:var(--font-mono);font-size:0.8rem;">${escapeHtml(st.path_suffix || "/")}</span>
+              <span style="color:var(--text-muted);">(${escapeHtml(st.name)})</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;">
+              <span class="badge" title="Expected Status">${st.expected_status}</span>
+              <button class="btn-ghost btn-xs text-danger btn-delete-step" data-scen-id="${sc.id}" data-step-id="${st.id}" title="Delete Step">&times;</button>
+            </div>
+          </div>
+        `
+          )
+          .join("");
+
+        return `
+        <div class="scenario-card" data-id="${sc.id}">
+          <div class="scenario-card-header">
+            <div>
+              <div class="scenario-title">${escapeHtml(sc.name)}</div>
+              <div class="scenario-meta">
+                <span>Target: <code>${escapeHtml(sc.target_url)}</code></span>
+                <span>Delay: ${sc.delay_between_steps_ms}ms</span>
+                <span>${(sc.steps || []).length} steps</span>
+              </div>
+            </div>
+            <div class="scenario-actions">
+              <button class="btn btn-primary btn-sm btn-run-scenario" data-id="${sc.id}">▶ Run Sequence</button>
+              <button class="btn btn-ghost btn-sm text-danger btn-delete-scenario" data-id="${sc.id}">Delete</button>
+            </div>
+          </div>
+          ${sc.description ? `<p style="font-size:0.8rem;color:var(--text-secondary);">${escapeHtml(sc.description)}</p>` : ""}
+          <div class="scenario-steps-list">
+            ${stepsHtml || '<div style="font-size:0.75rem;color:var(--text-muted);">No steps defined. Add steps from captured webhooks.</div>'}
+          </div>
+        </div>
+      `;
+      })
+      .join("");
+
+    // Attach step deletion handlers
+    els.scenariosListContainer.querySelectorAll(".btn-delete-step").forEach((btn) => {
+      btn.addEventListener("click", async (e) => {
+        e.stopPropagation();
+        const scenId = btn.getAttribute("data-scen-id");
+        const stepId = btn.getAttribute("data-step-id");
+        if (confirm("Remove this step from scenario?")) {
+          await fetch(`/api/scenarios/${scenId}/steps/${stepId}`, { method: "DELETE" });
+          fetchScenarios();
+        }
+      });
+    });
+
+    // Attach delete scenario handlers
+    els.scenariosListContainer.querySelectorAll(".btn-delete-scenario").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const scenId = btn.getAttribute("data-id");
+        if (confirm("Delete this entire scenario?")) {
+          await fetch(`/api/scenarios/${scenId}`, { method: "DELETE" });
+          fetchScenarios();
+        }
+      });
+    });
+
+    // Attach run scenario handlers
+    els.scenariosListContainer.querySelectorAll(".btn-run-scenario").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const scenId = btn.getAttribute("data-id");
+        runScenario(scenId);
+      });
+    });
+  }
+
+  async function saveNewScenario() {
+    const name = els.scenNameInput.value.trim();
+    let target = els.scenTargetInput.value.trim();
+    const desc = els.scenDescInput.value.trim();
+    const delay = parseInt(els.scenDelayInput.value, 10) || 500;
+
+    if (!name) {
+      alert("Please enter a scenario name.");
+      return;
+    }
+    if (!target) {
+      target = els.replayTargetInput.value.trim() || els.autoforwardUrl.value.trim() || "http://localhost:3000";
+    }
+
+    try {
+      const res = await fetch("/api/scenarios", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          channel_id: channelId,
+          name: name,
+          description: desc || null,
+          target_url: target,
+          delay_between_steps_ms: delay,
+          steps: [],
+        }),
+      });
+
+      if (res.ok) {
+        els.scenNameInput.value = "";
+        els.scenDescInput.value = "";
+        els.scenarioCreateBox.classList.add("hidden");
+        fetchScenarios();
+        showFeedback("Scenario created successfully", "success");
+      }
+    } catch (err) {
+      alert(`Failed creating scenario: ${err}`);
+    }
+  }
+
+  async function runScenario(scenarioId) {
+    els.scenarioRunBanner.classList.remove("hidden");
+    els.scenarioRunTitle.textContent = "Running scenario sequence...";
+    els.scenarioRunStatusBadge.className = "badge";
+    els.scenarioRunStatusBadge.textContent = "Running";
+    els.scenarioRunDetails.textContent = "Executing steps sequentially...";
+    els.scenarioRunTbody.innerHTML = "";
+
+    try {
+      const res = await fetch(`/api/scenarios/${scenarioId}/run`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+        els.scenarioRunStatusBadge.className = "badge bg-danger";
+        els.scenarioRunStatusBadge.textContent = "Error";
+        els.scenarioRunDetails.textContent = `Error: ${err.detail || "Run failed"}`;
+      }
+    } catch (err) {
+      els.scenarioRunStatusBadge.className = "badge bg-danger";
+      els.scenarioRunStatusBadge.textContent = "Failed";
+      els.scenarioRunDetails.textContent = `Network error: ${err}`;
+    }
+  }
+
+  function handleScenarioRunStarted(data) {
+    els.scenarioRunBanner.classList.remove("hidden");
+    els.scenarioRunTitle.textContent = `Executing: ${data.scenario_name || "Scenario"}`;
+    els.scenarioRunStatusBadge.className = "badge";
+    els.scenarioRunStatusBadge.textContent = "Running";
+    els.scenarioRunDetails.textContent = `Target: ${data.target_url} (${data.total_steps} steps)`;
+    els.scenarioRunTbody.innerHTML = "";
+  }
+
+  function handleScenarioStepCompleted(data) {
+    const tr = document.createElement("tr");
+    const passPill = data.passed
+      ? '<span class="fuzz-grade-pill fuzz-grade-passed">PASSED</span>'
+      : '<span class="fuzz-grade-pill fuzz-grade-vulnerable">FAILED</span>';
+
+    tr.innerHTML = `
+      <td>#${data.step_order}</td>
+      <td style="font-weight:600;">${escapeHtml(data.step_name)}</td>
+      <td><span class="method-tag method-${data.method.toLowerCase()}">${data.method}</span></td>
+      <td style="font-family:var(--font-mono);font-size:0.75rem;" title="${escapeHtml(data.url)}">${escapeHtml(data.url)}</td>
+      <td><code>${data.expected_status}</code></td>
+      <td><code>${data.actual_status || "ERR"}</code></td>
+      <td>${data.latency_ms} ms</td>
+      <td>${passPill}</td>
+    `;
+    els.scenarioRunTbody.appendChild(tr);
+  }
+
+  function handleScenarioRunCompleted(data) {
+    if (data.success) {
+      els.scenarioRunStatusBadge.className = "badge fuzz-grade-passed";
+      els.scenarioRunStatusBadge.textContent = "ALL PASSED";
+    } else {
+      els.scenarioRunStatusBadge.className = "badge fuzz-grade-vulnerable";
+      els.scenarioRunStatusBadge.textContent = `${data.failed_steps} FAILED`;
+    }
+    els.scenarioRunDetails.textContent = `Completed in ${data.total_duration_ms} ms. Passed: ${data.passed_steps}/${data.total_steps}.`;
+  }
+
+  // --- Add Request to Scenario ---
+  async function openAddToScenarioModal() {
+    if (!currentDetail) {
+      alert("Select a captured webhook request first.");
+      return;
+    }
+    await fetchScenarios();
+    if (activeScenarios.length === 0) {
+      if (confirm("No scenarios exist for this channel yet. Would you like to create one now?")) {
+        openScenariosModal();
+        els.scenarioCreateBox.classList.remove("hidden");
+      }
+      return;
+    }
+
+    els.addStepScenarioSelect.innerHTML = activeScenarios
+      .map((sc) => `<option value="${sc.id}">${escapeHtml(sc.name)} (${(sc.steps || []).length} steps)</option>`)
+      .join("");
+
+    let defaultSuffix = currentDetail.path || "";
+    if (defaultSuffix.startsWith(`/catch/${channelId}`)) {
+      defaultSuffix = defaultSuffix.replace(`/catch/${channelId}`, "").replace(/^\//, "");
+    }
+    els.addStepNameInput.value = `${currentDetail.method} ${defaultSuffix || "Webhook"}`;
+    els.addStepPathInput.value = defaultSuffix;
+    els.addStepStatusInput.value = 200;
+
+    els.addToScenarioModal.classList.remove("hidden");
+  }
+
+  async function confirmAddStep() {
+    const scenId = els.addStepScenarioSelect.value;
+    const name = els.addStepNameInput.value.trim() || "Webhook Step";
+    const pathSuffix = els.addStepPathInput.value.trim();
+    const expectedStatus = parseInt(els.addStepStatusInput.value, 10) || 200;
+
+    if (!scenId) return;
+
+    try {
+      const res = await fetch(`/api/scenarios/${scenId}/steps`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: name,
+          method: currentDetail.method,
+          path_suffix: pathSuffix,
+          headers: currentDetail.headers || {},
+          payload_raw: currentDetail.body_raw || "",
+          expected_status: expectedStatus,
+        }),
+      });
+
+      if (res.ok) {
+        els.addToScenarioModal.classList.add("hidden");
+        showFeedback("Request added to scenario sequence!", "success");
+      }
+    } catch (err) {
+      alert(`Failed adding step: ${err}`);
+    }
+  }
+
+  // --- Payload Fuzzing Suite ---
+  function openFuzzModal() {
+    if (!currentDetail) {
+      alert("Select a captured webhook request first to fuzz.");
+      return;
+    }
+    const target = els.replayTargetInput.value.trim() || els.autoforwardUrl.value.trim() || "http://localhost:3000/api/webhook";
+    els.fuzzTargetInput.value = target;
+    els.fuzzSelectedReqInfo.textContent = `Using request: ${currentDetail.method} ${currentDetail.path} (${formatBytes(currentDetail.body_raw ? currentDetail.body_raw.length : 0)})`;
+
+    els.fuzzSummaryCard.classList.add("hidden");
+    els.fuzzResultsContainer.classList.add("hidden");
+    els.fuzzModal.classList.remove("hidden");
+  }
+
+  async function startFuzzAudit() {
+    const target = els.fuzzTargetInput.value.trim();
+    if (!target) {
+      alert("Please provide a target webhook receiver URL.");
+      return;
+    }
+
+    const enabledMutations = [];
+    if (els.fuzzOpMissingKey.checked) enabledMutations.push("missing_key");
+    if (els.fuzzOpNullInjection.checked) enabledMutations.push("null_injection");
+    if (els.fuzzOpTypeConfusion.checked) enabledMutations.push("type_confusion");
+    if (els.fuzzOpCorruptedSig.checked) enabledMutations.push("corrupted_signature");
+    if (els.fuzzOpMalformedJson.checked) enabledMutations.push("malformed_json");
+
+    if (enabledMutations.length === 0) {
+      alert("Please select at least one mutation operator.");
+      return;
+    }
+
+    const maxCases = parseInt(els.fuzzMaxInput.value, 10) || 20;
+
+    els.btnStartFuzz.disabled = true;
+    els.btnStartFuzz.textContent = "Fuzzing In Progress...";
+
+    els.fuzzSummaryCard.classList.remove("hidden");
+    els.fuzzSummaryTitle.textContent = "Testing Receiver Resilience...";
+    els.fuzzBadgesRow.innerHTML = '<span class="badge">Testing...</span>';
+    els.fuzzSummaryText.textContent = "Generating and dispatching mutated payloads...";
+    els.fuzzResultsContainer.classList.remove("hidden");
+    els.fuzzResultsTbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-muted);">Running fuzz variations...</td></tr>';
+
+    try {
+      const res = await fetch("/api/scenarios/fuzz/run", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          target_url: target,
+          method: currentDetail ? currentDetail.method : "POST",
+          headers: currentDetail ? currentDetail.headers : {},
+          payload_raw: currentDetail ? currentDetail.body_raw : "{}",
+          channel_id: channelId,
+          config: {
+            enabled_mutations: enabledMutations,
+            max_mutations: maxCases,
+          },
+        }),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        renderFuzzResults(data);
+      } else {
+        const err = await res.json();
+        alert(`Fuzz run failed: ${err.detail || "Server error"}`);
+      }
+    } catch (err) {
+      alert(`Network error during fuzz run: ${err}`);
+    } finally {
+      els.btnStartFuzz.disabled = false;
+      els.btnStartFuzz.textContent = "⚡ Start Fuzz Audit";
+    }
+  }
+
+  function renderFuzzResults(data) {
+    els.fuzzSummaryTitle.textContent = data.all_passed
+      ? "✅ Resilience Grade: EXCELLENT"
+      : (data.vulnerable_count > 0 ? "⚠️ Resilience Grade: VULNERABLE" : "ℹ️ Resilience Grade: ACCEPTED INVALID");
+
+    els.fuzzBadgesRow.innerHTML = `
+      <span class="fuzz-grade-pill fuzz-grade-passed">${data.passed_count} PASSED (4xx)</span>
+      <span class="fuzz-grade-pill fuzz-grade-vulnerable">${data.vulnerable_count} VULNERABLE (5xx)</span>
+      <span class="fuzz-grade-pill fuzz-grade-accepted">${data.accepted_count} ACCEPTED (2xx)</span>
+    `;
+    els.fuzzSummaryText.textContent = data.summary;
+
+    if (!data.cases || data.cases.length === 0) {
+      els.fuzzResultsTbody.innerHTML = '<tr><td colspan="6" style="text-align:center;">No mutation cases generated.</td></tr>';
+      return;
+    }
+
+    els.fuzzResultsTbody.innerHTML = data.cases
+      .map((c) => {
+        let pillClass = "fuzz-grade-passed";
+        if (c.resilience_grade === "VULNERABLE") pillClass = "fuzz-grade-vulnerable";
+        else if (c.resilience_grade === "ACCEPTED") pillClass = "fuzz-grade-accepted";
+        else if (c.resilience_grade === "ERROR") pillClass = "fuzz-grade-error";
+
+        return `
+        <tr>
+          <td style="font-weight:600;">${escapeHtml(c.mutation_name)}</td>
+          <td><code>${escapeHtml(c.mutation_type)}</code></td>
+          <td style="font-family:var(--font-mono);font-size:0.75rem;">${escapeHtml(c.field_path || "-")}</td>
+          <td><code>${c.status_code || "ERR"}</code></td>
+          <td>${c.latency_ms} ms</td>
+          <td><span class="fuzz-grade-pill ${pillClass}">${c.resilience_grade}</span></td>
+        </tr>
+      `;
+      })
+      .join("");
+  }
+
   // Event Listeners Setup
   function setupEvents() {
+    // Scenarios Modal
+    els.btnOpenScenariosModal.addEventListener("click", openScenariosModal);
+    els.btnToggleCreateScenario.addEventListener("click", () => {
+      els.scenarioCreateBox.classList.toggle("hidden");
+    });
+    els.btnCancelScenario.addEventListener("click", () => {
+      els.scenarioCreateBox.classList.add("hidden");
+    });
+    els.btnSaveScenario.addEventListener("click", saveNewScenario);
+
+    // Add Request to Scenario
+    els.btnAddScenario.addEventListener("click", openAddToScenarioModal);
+    els.btnConfirmAddStep.addEventListener("click", confirmAddStep);
+
+    // Fuzz Testing Suite
+    els.btnFuzzRequest.addEventListener("click", openFuzzModal);
+    els.btnStartFuzz.addEventListener("click", startFuzzAudit);
+
     // Copy Ingest URL
     els.btnCopyUrl.addEventListener("click", () => {
+
       navigator.clipboard.writeText(els.ingestUrlInput.value).then(() => {
         const originalText = els.btnCopyUrl.textContent;
         els.btnCopyUrl.textContent = "Copied!";

@@ -1207,3 +1207,116 @@ kbd {
 .hidden {
   display: none !important;
 }
+
+/* Scenarios & Workflow Runner */
+.scenarios-list-container {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.scenario-card {
+  background: var(--bg-base);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.scenario-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.scenario-title {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.scenario-meta {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  display: flex;
+  gap: 12px;
+}
+
+.scenario-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.scenario-steps-list {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  padding: 8px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.scenario-step-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.8rem;
+  padding: 4px 0;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.scenario-step-item:last-child {
+  border-bottom: none;
+}
+
+.step-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.step-order-badge {
+  background: var(--bg-subtle);
+  color: var(--text-secondary);
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+}
+
+/* Fuzz Resilience Badges */
+.fuzz-grade-pill {
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: var(--radius-sm);
+  text-transform: uppercase;
+}
+
+.fuzz-grade-passed {
+  background-color: var(--color-success-bg);
+  color: var(--color-success);
+  border: 1px solid rgba(46, 160, 67, 0.4);
+}
+
+.fuzz-grade-vulnerable {
+  background-color: var(--color-danger-bg);
+  color: var(--color-danger);
+  border: 1px solid rgba(248, 81, 73, 0.4);
+}
+
+.fuzz-grade-accepted {
+  background-color: var(--color-warning-bg);
+  color: var(--color-warning);
+  border: 1px solid rgba(210, 153, 34, 0.4);
+}
+
+.fuzz-grade-error {
+  background-color: var(--bg-subtle);
+  color: var(--text-muted);
+  border: 1px solid var(--border-color);
+}
+

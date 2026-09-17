@@ -110,4 +110,45 @@ class DatabaseManager:
                         "ALTER TABLE channels ADD COLUMN max_requests INTEGER DEFAULT 500;"
                     )
 
+            # Scenarios workflow table
+            await db.execute(
+                """
+                CREATE TABLE IF NOT EXISTS scenarios (
+                    id TEXT PRIMARY KEY,
+                    channel_id TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    description TEXT,
+                    target_url TEXT NOT NULL,
+                    delay_between_steps_ms INTEGER DEFAULT 500,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (channel_id) REFERENCES channels(channel_id) ON DELETE CASCADE
+                );
+                """
+            )
+            await db.execute(
+                "CREATE INDEX IF NOT EXISTS idx_scenarios_channel ON scenarios(channel_id);"
+            )
+
+            # Scenario steps table
+            await db.execute(
+                """
+                CREATE TABLE IF NOT EXISTS scenario_steps (
+                    id TEXT PRIMARY KEY,
+                    scenario_id TEXT NOT NULL,
+                    step_order INTEGER NOT NULL,
+                    name TEXT NOT NULL,
+                    method TEXT NOT NULL DEFAULT 'POST',
+                    path_suffix TEXT DEFAULT '',
+                    headers_json TEXT NOT NULL DEFAULT '{}',
+                    payload_raw TEXT NOT NULL,
+                    expected_status INTEGER DEFAULT 200,
+                    FOREIGN KEY (scenario_id) REFERENCES scenarios(id) ON DELETE CASCADE
+                );
+                """
+            )
+            await db.execute(
+                "CREATE INDEX IF NOT EXISTS idx_steps_scenario ON scenario_steps(scenario_id);"
+            )
+
             await db.commit()
+
