@@ -202,6 +202,31 @@ def serve(
         tunnel_manager.stop()
 
 
+def _read_char() -> str:
+    """Read a single character from terminal non-blockingly."""
+    try:
+        import msvcrt
+
+        if msvcrt.kbhit():
+            ch = msvcrt.getch()
+            return ch.decode("utf-8", errors="ignore").lower()
+        return ""
+    except ImportError:
+        import select
+        import termios
+        import tty
+
+        if not select.select([sys.stdin], [], [], 0.05)[0]:
+            return ""
+        fd = sys.stdin.fileno()
+        old = termios.tcgetattr(fd)
+        try:
+            tty.setraw(fd)
+            return sys.stdin.read(1).lower()
+        finally:
+            termios.tcsetattr(fd, termios.TCSADRAIN, old)
+
+
 @cli.command(name="tail")
 def tail(
     channel_id: str = typer.Argument(..., help="Channel identifier to stream"),
@@ -209,50 +234,183 @@ def tail(
     port: int = typer.Option(8080, "-p", "--port", help="Server port"),
     show_headers: bool = typer.Option(False, "--headers", help="Display all request headers"),
     raw: bool = typer.Option(False, "--raw", help="Output raw JSON messages"),
+    interactive: bool = typer.Option(
+        True,
+        "-i",
+        "--interactive/--no-interactive",
+        help="Enable interactive terminal shortcuts (r=replay, b=burst, c=clear, q=quit)",
+    ),
 ) -> None:
     """Stream incoming webhooks live in the terminal."""
+    import httpx
     import websockets
 
     ws_url = f"ws://{host}:{port}/ws/{channel_id}"
     console.print(f"[bold cyan]Connecting to live stream on {ws_url}...[/bold cyan]")
-    console.print("[dim]Listening for incoming webhooks. Press CTRL+C to exit.[/dim]\n")
+
+    use_interactive = interactive and sys.stdin.isatty() and not raw
+    if use_interactive:
+        console.print(
+            "[dim]Interactive mode enabled: [bold cyan]r[/bold cyan]=Replay "
+            "[bold magenta]b[/bold magenta]=Burst (5x) [bold]c[/bold]=Clear "
+            "[bold red]q[/bold red]=Quit[/dim]\n"
+        )
+    else:
+        console.print("[dim]Listening for incoming webhooks. Press CTRL+C to exit.[/dim]\n")
+
+    state = {
+        "last_request_id": None,
+        "last_target_url": "http://localhost:3000/api/webhook",
+        "stop": False,
+    }
 
     async def run_tail() -> None:
+        # Attempt to pre-fetch channel auto-forward URL
         try:
-            async with websockets.connect(ws_url) as ws:
-                while True:
-                    msg_text = await ws.recv()
+            async with httpx.AsyncClient(timeout=2.0) as client:
+                cfg_resp = await client.get(f"http://{host}:{port}/api/channels/{channel_id}/config")
+                if cfg_resp.status_code == 200:
+                    cfg_data = cfg_resp.json()
+                    if cfg_data.get("auto_forward_url"):
+                        state["last_target_url"] = cfg_data["auto_forward_url"]
+        except Exception:
+            pass
+
+        async def key_loop() -> None:
+            loop = asyncio.get_running_loop()
+            while not state["stop"]:
+                key = await loop.run_in_executor(None, _read_char)
+                if not key:
+                    await asyncio.sleep(0.08)
+                    continue
+
+                if key == "q":
+                    state["stop"] = True
+                    break
+                elif key == "c":
+                    console.clear()
+                    console.print(
+                        f"[bold cyan]hook-trap tail: channel {channel_id}[/bold cyan]\n"
+                    )
+                elif key in ("?", "h"):
+                    console.print(
+                        "\n[dim]Shortcuts: [bold cyan]r[/bold cyan]=Replay "
+                        "[bold magenta]b[/bold magenta]=Burst 5x [bold]c[/bold]=Clear "
+                        "[bold red]q[/bold red]=Quit[/dim]\n"
+                    )
+                elif key == "r":
+                    req_id = state.get("last_request_id")
+                    if not req_id:
+                        console.print("[yellow]! No webhook captured yet to replay.[/yellow]")
+                        continue
+                    tgt = state.get("last_target_url")
+                    console.print(f"[cyan]⚡ Replaying {req_id[:8]} -> {tgt}...[/cyan]")
                     try:
-                        data = json.loads(msg_text)
-                    except json.JSONDecodeError:
-                        continue
-
-                    if raw:
-                        console.print(msg_text)
-                        continue
-
-                    event = data.get("event")
-                    if event == "connected":
-                        console.print(
-                            f"[green]Connected to channel [bold]{channel_id}[/bold][/green]\n"
+                        api_url = (
+                            f"http://{host}:{port}/api/channels/{channel_id}"
+                            f"/requests/{req_id}/replay"
                         )
-                    elif event == "new_request":
-                        req = data.get("data", {})
-                        renderer.render_tail_request(req, show_headers=show_headers)
-                    elif event == "replay_executed":
-                        rep = data.get("data", {})
-                        renderer.render_replay_event(rep)
-                    elif event == "ping":
-                        await ws.send("pong")
-        except KeyboardInterrupt:
-            console.print("\n[dim]Disconnected.[/dim]")
-        except Exception as exc:  # noqa: BLE001
-            console.print(f"[red]Connection error: {exc}[/red]")
+                        async with httpx.AsyncClient(timeout=10.0) as client:
+                            resp = await client.post(api_url, json={"target_url": tgt})
+                            if resp.status_code == 200:
+                                renderer.render_replay_event(resp.json())
+                            else:
+                                console.print(
+                                    f"[red]Replay failed ({resp.status_code}): {resp.text}[/red]"
+                                )
+                    except Exception as exc:
+                        console.print(f"[red]Replay execution error: {exc}[/red]")
+                elif key == "b":
+                    req_id = state.get("last_request_id")
+                    if not req_id:
+                        console.print("[yellow]! No webhook captured yet to burst.[/yellow]")
+                        continue
+                    tgt = state.get("last_target_url")
+                    console.print(
+                        f"[magenta]⚡ Firing 5x burst for {req_id[:8]} -> {tgt}...[/magenta]"
+                    )
+                    try:
+                        api_url = (
+                            f"http://{host}:{port}/api/channels/{channel_id}"
+                            f"/requests/{req_id}/burst"
+                        )
+                        async with httpx.AsyncClient(timeout=15.0) as client:
+                            resp = await client.post(
+                                api_url,
+                                json={"target_url": tgt, "count": 5, "concurrency": 5},
+                            )
+                            if resp.status_code == 200:
+                                bdata = resp.json()
+                                s_cnt = bdata.get("success_count")
+                                tot = bdata.get("total")
+                                verdict = bdata.get("idempotency_verdict")
+                                avg_lat = bdata.get("avg_latency_ms")
+                                console.print(
+                                    f"  [bold magenta]↳ BURST[/bold magenta] {s_cnt}/{tot} ok "
+                                    f"&bull; [bold green]{verdict}[/bold green] "
+                                    f"&bull; avg {avg_lat} ms\n"
+                                )
+                            else:
+                                console.print(
+                                    f"[red]Burst failed ({resp.status_code}): {resp.text}[/red]"
+                                )
+                    except Exception as exc:
+                        console.print(f"[red]Burst execution error: {exc}[/red]")
+
+        async def ws_loop() -> None:
+            try:
+                async with websockets.connect(ws_url) as ws:
+                    while not state["stop"]:
+                        try:
+                            msg_text = await asyncio.wait_for(ws.recv(), timeout=0.5)
+                        except TimeoutError:
+                            continue
+
+                        try:
+                            data = json.loads(msg_text)
+                        except json.JSONDecodeError:
+                            continue
+
+                        if raw:
+                            console.print(msg_text)
+                            continue
+
+                        event = data.get("event")
+                        if event == "connected":
+                            console.print(
+                                f"[green]Connected to channel [bold]{channel_id}[/bold][/green]\n"
+                            )
+                        elif event == "new_request":
+                            req = data.get("data", {})
+                            state["last_request_id"] = req.get("id")
+                            renderer.render_tail_request(req, show_headers=show_headers)
+                        elif event == "replay_executed":
+                            rep = data.get("data", {})
+                            if rep.get("target_url"):
+                                state["last_target_url"] = rep["target_url"]
+                            renderer.render_replay_event(rep)
+                        elif event == "ping":
+                            await ws.send("pong")
+            except (KeyboardInterrupt, asyncio.CancelledError):
+                pass
+            except Exception as exc:  # noqa: BLE001
+                if not state["stop"]:
+                    console.print(f"[red]Connection error: {exc}[/red]")
+
+        tasks = [asyncio.create_task(ws_loop())]
+        if use_interactive:
+            tasks.append(asyncio.create_task(key_loop()))
+
+        done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+        for t in pending:
+            t.cancel()
 
     try:
         asyncio.run(run_tail())
     except KeyboardInterrupt:
         pass
+    finally:
+        console.print("\n[dim]Disconnected.[/dim]")
 
 
 @cli.callback(invoke_without_command=True)

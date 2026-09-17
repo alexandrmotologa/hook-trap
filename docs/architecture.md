@@ -81,10 +81,17 @@ Five tables are maintained:
    - `created_at`: UTC ISO timestamp.
    - `error`: Error description if the target was unreachable or timed out.
 
-3. `channels`: Persists channel metadata.
+3. `channels`: Persists channel metadata and configuration.
    - `channel_id`: Unique channel name or token.
    - `name`: Optional human-readable label.
    - `auto_forward_url`: Target URL to forward requests to automatically.
+   - `max_requests`: Retention limit for stored requests.
+   - `custom_response_mode`: Ingestion response behavior (`default`, `echo_challenge`, `custom_json`, `custom_text`).
+   - `custom_response_body`: Template string for custom response payload.
+   - `custom_response_status`: HTTP status code to return on ingestion (default 200).
+   - `custom_response_content_type`: MIME type for custom response body.
+   - `signing_secret`: Default signing secret for automated re-signing.
+   - `signing_provider`: Default signing provider (`stripe`, `github`, `shopify`, `generic`).
    - `created_at`: Creation timestamp.
    - `updated_at`: Last update timestamp.
 
@@ -145,6 +152,27 @@ Stress tests endpoints by applying deterministic mutation operators to captured 
 - Malformed JSON: Truncates or introduces syntax errors into JSON bodies.
 - Resilience Grading: Grades responses (`PASSED` for handled 4xx, `VULNERABLE` for unhandled 5xx/crashes, `ACCEPTED` for 2xx).
 
+### Dynamic HMAC signature signer (`hook_trap/services/signatures/signer.py`)
+
+Recalculates cryptographic authentication headers on demand:
+- **Stripe**: Computes `t=now(),v1=hmac_sha256(secret, t + "." + payload)` to bypass upstream webhook tolerance expiry windows.
+- **GitHub**: Computes `sha256=hmac_sha256(secret, payload)`.
+- **Shopify**: Computes Base64-encoded `hmac_sha256(secret, payload)`.
+- **Generic**: Standard HMAC-SHA256 signature headers.
+
+### Burst & concurrency runner (`hook_trap/routes/api.py`)
+
+Executes throttled concurrent replays using `asyncio.Semaphore` and `asyncio.gather`:
+- Evaluates endpoint idempotency under concurrent race conditions.
+- Diagnoses verdicts: `ALL_ACCEPTED` (all 2xx), `IDEMPOTENT_HANDLED` (primary 2xx + idempotent 4xx/409 handling), `POTENTIAL_RACE_OR_CRASH` (5xx errors or server crashes).
+- Records per-attempt latency distributions (min, max, average).
+
+### Automated test generators (`hook_trap/services/export/test_generators.py`)
+
+Transforms captured webhooks into self-contained test suites:
+- **Pytest**: Produces async test functions leveraging `httpx.AsyncClient` with parsed headers and payloads.
+- **Jest / Vitest**: Generates ESM-compliant TypeScript/JavaScript tests ready to drop into test directories.
+
 ### User interface (`hook_trap/static/`)
 
 The dashboard is delivered as static files (`index.html`, `style.css`, `app.js`) without a build step.
@@ -152,5 +180,5 @@ The dashboard is delivered as static files (`index.html`, `style.css`, `app.js`)
 - Dark-themed interface with high contrast.
 - Split-pane layout: Ingestion controls and scrollable request list on the left, detailed tabs on the right.
 - Live DOM insertion on WebSocket events without requiring full page refreshes.
-- Modals for scenarios management, step creation, and fuzz test execution with visual resilience badges.
+- Modals for scenarios management, step creation, fuzz testing, burst testing, and code exports.
 - Zero external node package dependencies.

@@ -139,14 +139,17 @@ Deletes all requests and replay logs associated with the specified channel.
 
 ### Replay Webhook
 
-Executes an HTTP replay of a stored webhook request to a destination URL.
+Executes an HTTP replay of a stored webhook request to a destination URL, optionally recalculating fresh HMAC signatures.
 
 - **Route**: `POST /api/channels/{channel_id}/requests/{request_id}/replay`
 - **Request body**:
 
 ```json
 {
-  "target_url": "http://localhost:3000/api/webhook"
+  "target_url": "http://localhost:3000/api/webhook",
+  "re_sign": true,
+  "signing_provider": "stripe",
+  "signing_secret": "whsec_live_example"
 }
 ```
 
@@ -165,9 +168,57 @@ Executes an HTTP replay of a stored webhook request to a destination URL.
 }
 ```
 
+### Burst Concurrency & Race Condition Runner
+
+Dispatches multiple concurrent replays of a webhook request using `asyncio.gather` and semaphores to assess idempotency, double-spending vulnerabilities, and race conditions.
+
+- **Route**: `POST /api/channels/{channel_id}/requests/{request_id}/burst`
+- **Request body**:
+
+```json
+{
+  "target_url": "http://localhost:3000/api/webhook",
+  "count": 5,
+  "concurrency": 5,
+  "re_sign": true,
+  "signing_provider": "stripe",
+  "signing_secret": "whsec_test_secret"
+}
+```
+
+#### Response
+
+```json
+{
+  "target_url": "http://localhost:3000/api/webhook",
+  "total": 5,
+  "success_count": 1,
+  "error_count": 4,
+  "avg_latency_ms": 14.8,
+  "status_distribution": { "200": 1, "409": 4 },
+  "idempotency_verdict": "IDEMPOTENT_HANDLED",
+  "results": [
+    {
+      "iteration": 1,
+      "status_code": 200,
+      "latency_ms": 12.4,
+      "response_snippet": "{\"processed\": true}",
+      "error": null
+    },
+    {
+      "iteration": 2,
+      "status_code": 409,
+      "latency_ms": 14.1,
+      "response_snippet": "{\"error\": \"Duplicate event detected\"}",
+      "error": null
+    }
+  ]
+}
+```
+
 ### Get Channel Configuration
 
-Retrieves persisted configuration for a channel.
+Retrieves persisted configuration for a channel, including responder modes and signing secrets.
 
 - **Route**: `GET /api/channels/{channel_id}/config`
 
@@ -179,6 +230,12 @@ Retrieves persisted configuration for a channel.
   "name": "Local Checkout Testing",
   "auto_forward_url": "http://localhost:3000/api/webhook",
   "max_requests": 500,
+  "custom_response_mode": "echo_challenge",
+  "custom_response_body": null,
+  "custom_response_status": 200,
+  "custom_response_content_type": null,
+  "signing_secret": "whsec_my_secret",
+  "signing_provider": "stripe",
   "created_at": "2026-09-09T00:00:00Z",
   "updated_at": "2026-09-09T00:15:00Z"
 }
@@ -186,7 +243,7 @@ Retrieves persisted configuration for a channel.
 
 ### Update Channel Configuration
 
-Updates or configures automatic forwarding and request retention for a channel.
+Updates automatic forwarding, request retention, dynamic response handshake modes, and signing defaults for a channel.
 
 - **Route**: `PUT /api/channels/{channel_id}/config`
 - **Request body**:
@@ -195,7 +252,12 @@ Updates or configures automatic forwarding and request retention for a channel.
 {
   "name": "Local Checkout Testing",
   "auto_forward_url": "http://localhost:3000/api/webhook",
-  "max_requests": 500
+  "max_requests": 500,
+  "custom_response_mode": "echo_challenge",
+  "custom_response_body": null,
+  "custom_response_status": 200,
+  "signing_secret": "whsec_my_secret",
+  "signing_provider": "stripe"
 }
 ```
 

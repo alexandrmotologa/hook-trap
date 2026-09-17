@@ -6,6 +6,7 @@ from hook_trap.services.signatures.service import (
     signature_verification_service,
 )
 from hook_trap.services.signatures.shopify import ShopifySignatureVerifier
+from hook_trap.services.signatures.signer import SignatureSigner, signature_signer
 from hook_trap.services.signatures.stripe import StripeSignatureVerifier
 
 __all__ = [
@@ -13,7 +14,9 @@ __all__ = [
     "GenericHmacVerifier",
     "GitHubSignatureVerifier",
     "ShopifySignatureVerifier",
+    "SignatureSigner",
     "SignatureVerificationService",
     "StripeSignatureVerifier",
+    "signature_signer",
     "signature_verification_service",
 ]

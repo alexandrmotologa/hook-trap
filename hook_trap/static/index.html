@@ -85,6 +85,39 @@
             <input type="number" id="retention-max-input" min="10" max="5000" step="50" value="500" class="retention-input" title="Max requests kept in database before auto-pruning">
             <span class="retention-hint">max requests</span>
           </div>
+          <div class="channel-advanced-card">
+            <button id="btn-toggle-channel-advanced" class="btn-toggle-advanced" type="button">
+              <span>⚙ Responder & Signing Secrets</span> ▾
+            </button>
+            <div id="channel-advanced-box" class="advanced-fields-box hidden">
+              <div class="form-group" style="margin-bottom:6px;">
+                <label style="font-size:0.75rem;color:var(--text-secondary);">/catch Response Mode:</label>
+                <select id="channel-response-mode-select" class="select-xs" style="width:100%;">
+                  <option value="default">Default ({status: captured})</option>
+                  <option value="echo_challenge">Echo Challenge (Slack / Meta)</option>
+                  <option value="custom_json">Custom JSON Body</option>
+                  <option value="custom_text">Custom Text / XML</option>
+                </select>
+              </div>
+              <div id="channel-custom-body-group" class="form-group hidden" style="margin-bottom:6px;">
+                <label style="font-size:0.75rem;color:var(--text-secondary);">Custom Body:</label>
+                <textarea id="channel-custom-body" class="input-xs" style="width:100%;height:50px;font-family:var(--font-mono);" placeholder="Response body..."></textarea>
+              </div>
+              <div class="form-group" style="margin-bottom:6px;">
+                <label style="font-size:0.75rem;color:var(--text-secondary);">Default Signing Secret:</label>
+                <input type="password" id="channel-signing-secret" class="input-xs" style="width:100%;" placeholder="e.g. whsec_...">
+              </div>
+              <div class="form-group" style="margin-bottom:6px;">
+                <label style="font-size:0.75rem;color:var(--text-secondary);">Signing Provider:</label>
+                <select id="channel-signing-provider" class="select-xs" style="width:100%;">
+                  <option value="stripe">Stripe</option>
+                  <option value="github">GitHub</option>
+                  <option value="shopify">Shopify</option>
+                  <option value="generic">Generic</option>
+                </select>
+              </div>
+            </div>
+          </div>
         </div>
 
         <!-- Filter & Search Controls -->
@@ -137,6 +170,9 @@
               <button id="btn-replay" class="btn btn-replay" title="Press 'r' to replay">
                 <span id="replay-btn-text">⚡ Replay</span>
               </button>
+              <button id="btn-open-burst" class="btn btn-secondary" title="Concurrent burst testing (race condition / idempotency)">
+                ⚡ Burst
+              </button>
               <button id="btn-open-diff" class="btn btn-secondary" title="Compare with another webhook payload (Press 'd')">
                 Diff
               </button>
@@ -149,6 +185,22 @@
               <button id="btn-fuzz-request" class="btn btn-secondary" title="Fuzz & test resilience against crashes (Press 'f')">
                 💥 Fuzz Test
               </button>
+            </div>
+            <div class="replay-options-row">
+              <label class="resign-label" title="Re-compute valid HMAC with fresh timestamp on replay">
+                <input type="checkbox" id="replay-resign-toggle">
+                <span>🔄 Auto-Re-sign (Fresh HMAC)</span>
+              </label>
+              <div id="replay-resign-fields" class="resign-fields hidden">
+                <select id="replay-resign-provider" class="select-xs">
+                  <option value="auto">Auto Provider</option>
+                  <option value="stripe">Stripe (t=now)</option>
+                  <option value="github">GitHub</option>
+                  <option value="shopify">Shopify</option>
+                  <option value="generic">Generic</option>
+                </select>
+                <input type="password" id="replay-resign-secret" class="input-xs" placeholder="Secret (e.g. whsec_...)" spellcheck="false">
+              </div>
             </div>
             <div id="replay-feedback" class="replay-feedback hidden"></div>
 
@@ -287,6 +339,8 @@
         <button class="export-tab-btn active" data-lang="curl">cURL</button>
         <button class="export-tab-btn" data-lang="python">Python (httpx)</button>
         <button class="export-tab-btn" data-lang="javascript">JavaScript (fetch)</button>
+        <button class="export-tab-btn" data-lang="pytest">Pytest</button>
+        <button class="export-tab-btn" data-lang="jest">Jest / Vitest</button>
       </div>
       <div class="modal-body">
         <pre id="export-code-block" class="code-block"></pre>
@@ -601,8 +655,74 @@
         </div>
       </div>
     </div>
-  </div>
+  <!-- Burst Concurrency Runner Modal -->
+  <div id="burst-modal" class="modal-backdrop hidden">
+    <div class="modal-card modal-lg">
+      <div class="modal-header">
+        <h3>⚡ Burst & Concurrency Runner</h3>
+        <button class="btn-close" data-close="burst-modal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p class="modal-desc" style="font-size:0.85rem;color:var(--text-secondary);margin-bottom:14px;">
+          Test idempotency and race conditions by firing concurrent replays of the captured webhook to your local endpoint.
+        </p>
 
+        <div style="display:flex;gap:12px;margin-bottom:14px;align-items:flex-end;">
+          <div class="form-group" style="flex:2;margin-bottom:0;">
+            <label for="burst-target-input">Target URL:</label>
+            <input type="url" id="burst-target-input" class="form-input" placeholder="http://localhost:3000/api/webhook" spellcheck="false">
+          </div>
+          <div class="form-group" style="flex:1;margin-bottom:0;">
+            <label for="burst-count-select">Count:</label>
+            <select id="burst-count-select" class="form-select">
+              <option value="5" selected>5 requests</option>
+              <option value="10">10 requests</option>
+              <option value="20">20 requests</option>
+            </select>
+          </div>
+          <div class="form-group" style="flex:1;margin-bottom:0;">
+            <label for="burst-concurrency-select">Concurrency:</label>
+            <select id="burst-concurrency-select" class="form-select">
+              <option value="5" selected>5 parallel</option>
+              <option value="10">10 parallel</option>
+              <option value="1">1 (serial)</option>
+            </select>
+          </div>
+        </div>
+
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+          <label style="display:flex;align-items:center;gap:6px;font-size:0.85rem;cursor:pointer;">
+            <input type="checkbox" id="burst-resign-toggle"> Auto-re-sign each request (fresh HMAC timestamp)
+          </label>
+          <button id="btn-fire-burst" class="btn btn-primary">⚡ Fire Burst Replay</button>
+        </div>
+
+        <!-- Burst Verdict Banner -->
+        <div id="burst-summary-card" class="card hidden" style="margin-bottom:14px;padding:12px 16px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+            <h4 id="burst-summary-title" style="font-size:0.9rem;">Idempotency Assessment</h4>
+            <span id="burst-verdict-badge" class="burst-verdict-pill"></span>
+          </div>
+          <p id="burst-summary-desc" style="font-size:0.8rem;color:var(--text-secondary);margin:0;"></p>
+        </div>
+
+        <!-- Burst Results Table -->
+        <div id="burst-results-container" class="table-container hidden">
+          <table class="data-table" id="burst-results-table">
+            <thead>
+              <tr>
+                <th style="width: 10%;">#</th>
+                <th style="width: 15%;">Status</th>
+                <th style="width: 15%;">Latency</th>
+                <th>Response Preview / Error</th>
+              </tr>
+            </thead>
+            <tbody id="burst-results-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
 
   <script src="/static/app.js"></script>
 </body>

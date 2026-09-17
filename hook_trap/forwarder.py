@@ -20,6 +20,9 @@ async def forward_request(
     request_id: str,
     target_url: str,
     timeout: float = 10.0,
+    re_sign: bool = False,
+    signing_provider: str | None = None,
+    signing_secret: str | None = None,
 ) -> dict[str, Any]:
     """
     Execute an HTTP forward/replay of a captured request to target_url.
@@ -31,4 +34,7 @@ async def forward_request(
         request_id=request_id,
         target_url=target_url,
         timeout=timeout,
+        re_sign=re_sign,
+        signing_provider=signing_provider,
+        signing_secret=signing_secret,
     )

@@ -136,7 +136,43 @@ class WebhookIngestionService:
             max_requests,
         )
 
-        # 10. Check for custom status response override (?status=503)
+        # 10. Check custom response mode or challenge echo
+        resp_mode = channel_cfg.get("custom_response_mode", "default") if channel_cfg else "default"
+
+        if resp_mode == "echo_challenge":
+            # 1. Slack Events API verification
+            if isinstance(body_json, dict) and "challenge" in body_json:
+                return JSONResponse(
+                    status_code=200,
+                    content={"challenge": body_json["challenge"]},
+                )
+            # 2. Meta / WhatsApp webhook verification
+            if "hub.challenge" in query_params_dict:
+                return Response(
+                    content=str(query_params_dict["hub.challenge"]),
+                    media_type="text/plain",
+                    status_code=200,
+                )
+
+        if resp_mode in ("custom_json", "custom_text") and channel_cfg:
+            custom_body = channel_cfg.get("custom_response_body") or ""
+            custom_status = channel_cfg.get("custom_response_status") or 200
+            content_type = channel_cfg.get("custom_response_content_type") or (
+                "application/json" if resp_mode == "custom_json" else "text/plain"
+            )
+            if resp_mode == "custom_json":
+                try:
+                    parsed_json = json.loads(custom_body)
+                    return JSONResponse(status_code=custom_status, content=parsed_json)
+                except Exception:
+                    pass
+            return Response(
+                content=custom_body,
+                media_type=content_type,
+                status_code=custom_status,
+            )
+
+        # 11. Check for custom status response override (?status=503)
         status_code = 200
         if "status" in query_params_dict:
             try:

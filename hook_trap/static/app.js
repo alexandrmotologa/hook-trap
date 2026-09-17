@@ -151,10 +151,38 @@
     detailContent: document.getElementById("detail-content"),
     replayTargetInput: document.getElementById("replay-target-input"),
     btnReplay: document.getElementById("btn-replay"),
+    btnOpenBurst: document.getElementById("btn-open-burst"),
     replayBtnText: document.getElementById("replay-btn-text"),
     replayFeedback: document.getElementById("replay-feedback"),
+    replayResignToggle: document.getElementById("replay-resign-toggle"),
+    replayResignFields: document.getElementById("replay-resign-fields"),
+    replayResignProvider: document.getElementById("replay-resign-provider"),
+    replayResignSecret: document.getElementById("replay-resign-secret"),
     btnCodeExport: document.getElementById("btn-code-export"),
     btnOpenDiff: document.getElementById("btn-open-diff"),
+
+    // Channel Advanced Settings
+    btnToggleChannelAdvanced: document.getElementById("btn-toggle-channel-advanced"),
+    channelAdvancedBox: document.getElementById("channel-advanced-box"),
+    channelResponseModeSelect: document.getElementById("channel-response-mode-select"),
+    channelCustomBodyGroup: document.getElementById("channel-custom-body-group"),
+    channelCustomBody: document.getElementById("channel-custom-body"),
+    channelSigningSecret: document.getElementById("channel-signing-secret"),
+    channelSigningProvider: document.getElementById("channel-signing-provider"),
+
+    // Burst Concurrency Modal
+    burstModal: document.getElementById("burst-modal"),
+    burstTargetInput: document.getElementById("burst-target-input"),
+    burstCountSelect: document.getElementById("burst-count-select"),
+    burstConcurrencySelect: document.getElementById("burst-concurrency-select"),
+    burstResignToggle: document.getElementById("burst-resign-toggle"),
+    btnFireBurst: document.getElementById("btn-fire-burst"),
+    burstSummaryCard: document.getElementById("burst-summary-card"),
+    burstSummaryTitle: document.getElementById("burst-summary-title"),
+    burstVerdictBadge: document.getElementById("burst-verdict-badge"),
+    burstSummaryDesc: document.getElementById("burst-summary-desc"),
+    burstResultsContainer: document.getElementById("burst-results-container"),
+    burstResultsTbody: document.getElementById("burst-results-tbody"),
 
     detailMethod: document.getElementById("detail-method"),
     detailPath: document.getElementById("detail-path"),
@@ -327,23 +355,58 @@
         if (data.max_requests) {
           els.retentionMaxInput.value = data.max_requests;
         }
+        if (data.custom_response_mode && els.channelResponseModeSelect) {
+          els.channelResponseModeSelect.value = data.custom_response_mode;
+          if (els.channelCustomBodyGroup) {
+            els.channelCustomBodyGroup.classList.toggle(
+              "hidden",
+              !["custom_json", "custom_text"].includes(data.custom_response_mode)
+            );
+          }
+        }
+        if (data.custom_response_body && els.channelCustomBody) {
+          els.channelCustomBody.value = data.custom_response_body;
+        }
+        if (data.signing_secret) {
+          if (els.channelSigningSecret) els.channelSigningSecret.value = data.signing_secret;
+          if (els.replayResignSecret && !els.replayResignSecret.value) {
+            els.replayResignSecret.value = data.signing_secret;
+          }
+        }
+        if (data.signing_provider) {
+          if (els.channelSigningProvider) els.channelSigningProvider.value = data.signing_provider;
+          if (els.replayResignProvider && els.replayResignProvider.value === "auto") {
+            els.replayResignProvider.value = data.signing_provider;
+          }
+        }
       }
     } catch (err) {
       console.warn("Could not fetch channel config", err);
     }
   }
 
-  // Save Channel Config (Auto-forward & Retention)
+  // Save Channel Config (Auto-forward, Retention, Responder & Secret)
   async function saveChannelConfig() {
     const isEnabled = els.autoforwardToggle.checked;
     const url = isEnabled ? els.autoforwardUrl.value.trim() : null;
     const maxReqs = parseInt(els.retentionMaxInput.value) || 500;
+    const respMode = els.channelResponseModeSelect ? els.channelResponseModeSelect.value : "default";
+    const customBody = els.channelCustomBody ? els.channelCustomBody.value : null;
+    const sigSecret = els.channelSigningSecret ? els.channelSigningSecret.value.trim() : null;
+    const sigProvider = els.channelSigningProvider ? els.channelSigningProvider.value : "stripe";
 
     try {
       const res = await fetch(`/api/channels/${channelId}/config`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ auto_forward_url: url, max_requests: maxReqs }),
+        body: JSON.stringify({
+          auto_forward_url: url,
+          max_requests: maxReqs,
+          custom_response_mode: respMode,
+          custom_response_body: customBody,
+          signing_secret: sigSecret,
+          signing_provider: sigProvider,
+        }),
       });
       if (res.ok) {
         showFeedback("Channel settings saved", "success");
@@ -729,13 +792,22 @@
     els.replayBtnText.textContent = "Forwarding...";
     els.replayFeedback.className = "replay-feedback hidden";
 
+    const reSign = els.replayResignToggle ? els.replayResignToggle.checked : false;
+    const signingProvider = els.replayResignProvider ? els.replayResignProvider.value : "stripe";
+    const signingSecret = els.replayResignSecret ? els.replayResignSecret.value.trim() : "";
+
     try {
       const res = await fetch(
         `/api/channels/${channelId}/requests/${currentDetail.id}/replay`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ target_url: targetUrl }),
+          body: JSON.stringify({
+            target_url: targetUrl,
+            re_sign: reSign,
+            signing_provider: signingProvider,
+            signing_secret: signingSecret || null,
+          }),
         }
       );
 
@@ -1021,9 +1093,162 @@ print(response.text)
   .then(text => console.log(text))
   .catch(err => console.error(err));
 `;
+    } else if (lang === "pytest") {
+      const headerDict = {};
+      for (const [k, v] of Object.entries(headers)) {
+        if (!["host", "content-length"].includes(k.toLowerCase())) {
+          headerDict[k] = v;
+        }
+      }
+      code = `import pytest
+import httpx
+
+@pytest.mark.asyncio
+async def test_webhook_handler():
+    """Verify webhook ingestion and business logic handling."""
+    target_url = "${targetUrl}"
+    headers = ${JSON.stringify(headerDict, null, 4).replace(/\n/g, "\n    ")}
+    raw_payload = """${body.replace(/"""/g, '\\"\\"\\"')}"""
+
+    async with httpx.AsyncClient() as client:
+        response = await client.${method.toLowerCase()}(
+            target_url,
+            content=raw_payload.encode("utf-8"),
+            headers=headers,
+            timeout=10.0,
+        )
+        assert response.status_code in [200, 201, 202, 204], f"Unexpected status: {response.status_code}"
+`;
+    } else if (lang === "jest") {
+      const headerDict = {};
+      for (const [k, v] of Object.entries(headers)) {
+        if (!["host", "content-length"].includes(k.toLowerCase())) {
+          headerDict[k] = v;
+        }
+      }
+      code = `import { describe, it, expect } from "vitest"; // or @jest/globals
+
+describe("Webhook Receiver Suite", () => {
+  it("should process webhook request successfully", async () => {
+    const targetUrl = "${targetUrl}";
+    const headers = ${JSON.stringify(headerDict, null, 4).replace(/\n/g, "\n    ")};
+    const body = ${["GET", "HEAD"].includes(method) ? "undefined" : JSON.stringify(body)};
+
+    const response = await fetch(targetUrl, {
+      method: "${method}",
+      headers,
+      body,
+    });
+
+    expect([200, 201, 202, 204]).toContain(response.status);
+  });
+});
+`;
     }
 
     els.exportCodeBlock.textContent = code;
+  }
+
+  // Burst Concurrency Runner
+  function openBurstModal() {
+    if (!currentDetail) return;
+    const targetUrl = els.replayTargetInput.value.trim() || `http://localhost:3000/api/webhook`;
+    els.burstTargetInput.value = targetUrl;
+    els.burstSummaryCard.classList.add("hidden");
+    els.burstResultsContainer.classList.add("hidden");
+    els.burstModal.classList.remove("hidden");
+  }
+
+  async function fireBurstReplay() {
+    if (!currentDetail) return;
+    const targetUrl = els.burstTargetInput.value.trim();
+    if (!targetUrl) {
+      alert("Please enter a valid target URL for burst testing.");
+      return;
+    }
+
+    const count = parseInt(els.burstCountSelect.value, 10) || 5;
+    const concurrency = parseInt(els.burstConcurrencySelect.value, 10) || 5;
+    const reSign = els.burstResignToggle ? els.burstResignToggle.checked : false;
+    const signingProvider = els.replayResignProvider ? els.replayResignProvider.value : "stripe";
+    const signingSecret = els.replayResignSecret ? els.replayResignSecret.value.trim() : "";
+
+    els.btnFireBurst.disabled = true;
+    els.btnFireBurst.textContent = "Firing Burst...";
+
+    try {
+      const res = await fetch(
+        `/api/channels/${channelId}/requests/${currentDetail.id}/burst`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            target_url: targetUrl,
+            count: count,
+            concurrency: concurrency,
+            re_sign: reSign,
+            signing_provider: signingProvider,
+            signing_secret: signingSecret || null,
+          }),
+        }
+      );
+
+      if (res.ok) {
+        const data = await res.json();
+        renderBurstResults(data);
+      } else {
+        const err = await res.json();
+        alert(`Burst replay failed: ${err.detail || "Server error"}`);
+      }
+    } catch (err) {
+      alert(`Network error during burst replay: ${err.message}`);
+    } finally {
+      els.btnFireBurst.disabled = false;
+      els.btnFireBurst.textContent = "⚡ Fire Burst Replay";
+    }
+  }
+
+  function renderBurstResults(data) {
+    els.burstSummaryCard.classList.remove("hidden");
+    els.burstResultsContainer.classList.remove("hidden");
+
+    let badgeClass = "badge-success";
+    if (data.idempotency_verdict === "POTENTIAL_RACE_OR_CRASH") {
+      badgeClass = "badge-danger";
+    } else if (data.idempotency_verdict === "IDEMPOTENT_HANDLED") {
+      badgeClass = "badge-warning";
+    } else if (data.idempotency_verdict === "ALL_FAILED") {
+      badgeClass = "badge-danger";
+    }
+
+    els.burstVerdictBadge.className = `badge ${badgeClass}`;
+    els.burstVerdictBadge.textContent = data.idempotency_verdict;
+
+    const completed = data.results ? data.results.length : 0;
+    els.burstSummaryTitle.textContent = `Completed ${completed}/${data.total} requests`;
+    els.burstSummaryDesc.textContent = `Success: ${data.success_count} | Errors: ${data.error_count} | Avg Latency: ${data.avg_latency_ms} ms`;
+
+    if (!data.results || data.results.length === 0) {
+      els.burstResultsTbody.innerHTML = '<tr><td colspan="5" style="text-align:center;">No results</td></tr>';
+      return;
+    }
+
+    els.burstResultsTbody.innerHTML = data.results
+      .map((r) => {
+        const isOk = r.status_code && r.status_code >= 200 && r.status_code < 400;
+        return `
+          <tr>
+            <td>#${r.iteration}</td>
+            <td><code class="${isOk ? "text-success" : "text-danger"}">${r.status_code || "ERR"}</code></td>
+            <td>${r.latency_ms} ms</td>
+            <td style="max-width: 250px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+              ${escapeHtml(r.response_snippet || "-")}
+            </td>
+            <td>${r.error ? `<span class="text-danger">${escapeHtml(r.error)}</span>` : '<span class="text-success">OK</span>'}</td>
+          </tr>
+        `;
+      })
+      .join("");
   }
 
   // Keyboard navigation & shortcuts
@@ -1624,8 +1849,47 @@ print(response.text)
     // Clear History
     els.btnClearHistory.addEventListener("click", clearHistory);
 
-    // Replay
+    // Replay & Burst
     els.btnReplay.addEventListener("click", triggerReplay);
+    if (els.btnOpenBurst) els.btnOpenBurst.addEventListener("click", openBurstModal);
+    if (els.btnFireBurst) els.btnFireBurst.addEventListener("click", fireBurstReplay);
+
+    if (els.replayResignToggle) {
+      els.replayResignToggle.addEventListener("change", (e) => {
+        if (els.replayResignFields) {
+          els.replayResignFields.classList.toggle("hidden", !e.target.checked);
+        }
+      });
+    }
+
+    // Advanced Channel Settings
+    if (els.btnToggleChannelAdvanced) {
+      els.btnToggleChannelAdvanced.addEventListener("click", () => {
+        if (els.channelAdvancedBox) {
+          els.channelAdvancedBox.classList.toggle("hidden");
+        }
+      });
+    }
+
+    if (els.channelResponseModeSelect) {
+      els.channelResponseModeSelect.addEventListener("change", (e) => {
+        const showBody = ["custom_json", "custom_text"].includes(e.target.value);
+        if (els.channelCustomBodyGroup) {
+          els.channelCustomBodyGroup.classList.toggle("hidden", !showBody);
+        }
+        saveChannelConfig();
+      });
+    }
+
+    if (els.channelCustomBody) {
+      els.channelCustomBody.addEventListener("change", saveChannelConfig);
+    }
+    if (els.channelSigningSecret) {
+      els.channelSigningSecret.addEventListener("change", saveChannelConfig);
+    }
+    if (els.channelSigningProvider) {
+      els.channelSigningProvider.addEventListener("change", saveChannelConfig);
+    }
 
     // Code Export
     els.btnCodeExport.addEventListener("click", openExportModal);

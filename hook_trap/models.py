@@ -59,6 +59,43 @@ class ReplayRequest(BaseModel):
     """Payload to trigger an HTTP replay to a target URL."""
 
     target_url: str
+    re_sign: bool = False
+    signing_provider: str | None = None
+    signing_secret: str | None = None
+
+
+class BurstReplayRequest(BaseModel):
+    """Payload to trigger concurrent burst replays for idempotency testing."""
+
+    target_url: str
+    count: int = Field(default=5, ge=1, le=50)
+    concurrency: int = Field(default=5, ge=1, le=20)
+    re_sign: bool = False
+    signing_provider: str | None = None
+    signing_secret: str | None = None
+
+
+class BurstResultItem(BaseModel):
+    """Individual result from a burst request."""
+
+    index: int
+    status_code: int | None = None
+    latency_ms: float = 0.0
+    error: str | None = None
+    response_preview: str = ""
+
+
+class BurstReplayResponse(BaseModel):
+    """Aggregated outcome of a burst concurrency replay test."""
+
+    target_url: str
+    total: int
+    success_count: int
+    error_count: int
+    avg_latency_ms: float
+    status_distribution: dict[str, int] = Field(default_factory=dict)
+    idempotency_verdict: str = "UNKNOWN"
+    results: list[BurstResultItem] = Field(default_factory=list)
 
 
 class ReplayLogDetail(BaseModel):
@@ -82,6 +119,12 @@ class ChannelConfig(BaseModel):
     name: str | None = None
     auto_forward_url: str | None = None
     max_requests: int = 500
+    custom_response_mode: str = "default"
+    custom_response_body: str | None = None
+    custom_response_status: int = 200
+    custom_response_content_type: str = "application/json"
+    signing_secret: str | None = None
+    signing_provider: str | None = None
     created_at: str
     updated_at: str
 
@@ -92,6 +135,12 @@ class ChannelConfigUpdate(BaseModel):
     name: str | None = None
     auto_forward_url: str | None = None
     max_requests: int | None = None
+    custom_response_mode: str | None = None
+    custom_response_body: str | None = None
+    custom_response_status: int | None = None
+    custom_response_content_type: str | None = None
+    signing_secret: str | None = None
+    signing_provider: str | None = None
 
 
 class SignatureVerifyRequest(BaseModel):

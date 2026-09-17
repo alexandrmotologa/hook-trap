@@ -56,13 +56,25 @@ hook-trap tail <channel_id> [OPTIONS]
 | `--port` | `-p` | INTEGER | `8080` | Server port |
 | `--headers` | | BOOLEAN | `False` | Display all request headers in terminal output |
 | `--raw` | | BOOLEAN | `False` | Output raw JSON lines |
+| `--interactive` | `-i` | BOOLEAN | `False` | Enable interactive keyboard listener for terminal actions |
+
+#### Interactive Terminal Hotkeys (`-i` mode)
+
+When running in interactive mode (`hook-trap tail <channel_id> -i`), single-key terminal shortcuts are enabled:
+
+| Key | Action |
+|---|---|
+| `r` | Replay the most recently captured webhook to the active target URL |
+| `b` | Fire a 5x burst concurrent replay against the active target URL |
+| `c` | Clear terminal output console |
+| `q` | Gracefully terminate the live tail session |
 
 #### Examples
 
-Stream events for channel `stripe_test`:
+Stream events for channel `stripe_test` in interactive mode:
 
 ```bash
-hook-trap tail stripe_test
+hook-trap tail stripe_test -i
 ```
 
 Stream events including header tables:

@@ -96,19 +96,35 @@ class DatabaseManager:
                     name TEXT,
                     auto_forward_url TEXT,
                     max_requests INTEGER DEFAULT 500,
+                    custom_response_mode TEXT DEFAULT 'default',
+                    custom_response_body TEXT,
+                    custom_response_status INTEGER DEFAULT 200,
+                    custom_response_content_type TEXT DEFAULT 'application/json',
+                    signing_secret TEXT,
+                    signing_provider TEXT,
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL
                 );
                 """
             )
 
-            # Schema migration check for max_requests column
+            # Schema migration check for new channels columns
             async with db.execute("PRAGMA table_info(channels);") as cursor:
                 columns = [row["name"] for row in await cursor.fetchall()]
-                if "max_requests" not in columns:
-                    await db.execute(
-                        "ALTER TABLE channels ADD COLUMN max_requests INTEGER DEFAULT 500;"
-                    )
+                migrations = [
+                    ("max_requests", "INTEGER DEFAULT 500"),
+                    ("custom_response_mode", "TEXT DEFAULT 'default'"),
+                    ("custom_response_body", "TEXT"),
+                    ("custom_response_status", "INTEGER DEFAULT 200"),
+                    ("custom_response_content_type", "TEXT DEFAULT 'application/json'"),
+                    ("signing_secret", "TEXT"),
+                    ("signing_provider", "TEXT"),
+                ]
+                for col_name, col_def in migrations:
+                    if col_name not in columns:
+                        await db.execute(
+                            f"ALTER TABLE channels ADD COLUMN {col_name} {col_def};"
+                        )
 
             # Scenarios workflow table
             await db.execute(

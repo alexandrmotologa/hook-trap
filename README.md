@@ -73,14 +73,19 @@ In nature, the praying mantis sits motionless on branches, tracking movement acr
 - **Sample webhook generator**: Send pre-configured Stripe, GitHub, or Shopify test webhooks to your channel with one click.
 - **Payload diff comparison**: Compare two captured payloads side by side to inspect changes between webhook deliveries and retries.
 - **Exact payload and signature retention**: Preserves raw body bytes and headers, including HMAC signatures from Stripe (`Stripe-Signature`), GitHub (`X-Hub-Signature-256`), and Shopify (`X-Shopify-Hmac-Sha256`).
+- **Dynamic HMAC Auto-Re-signing on Replay**: Automatically recompute valid HMAC signatures with current timestamps on replay (e.g. Stripe `t=now()`, GitHub `sha256`, Shopify `base64`, Generic HMAC) to bypass tolerance expiry windows.
 - **HTTP replay engine**: Replay any captured webhook to a local endpoint such as `http://localhost:3000/api/webhook`, recording latency, status codes, and response headers.
+- **Burst & Concurrency Runner**: Dispatch controlled concurrent replays via `asyncio.gather` with latency distribution metrics and automated idempotency / race-condition diagnostics (`ALL_ACCEPTED`, `IDEMPOTENT_HANDLED`, `POTENTIAL_RACE_OR_CRASH`).
+- **Dynamic Challenge Handshake & Custom Responder**: Automatic validation responder for Slack `url_verification` (`challenge` echo) and Meta / WhatsApp Cloud API verification (`hub.challenge`), plus custom status codes, JSON templates, or XML (Twilio TwiML).
+- **Automated Unit Test Generator**: One-click code generation for Pytest (`httpx.AsyncClient`) and Jest / Vitest integration tests derived directly from captured payloads and headers.
 - **Automatic forwarding**: Forward incoming webhooks to your local service as soon as they hit the receiver.
 - **Automated Webhook Sequence Runner**: Chain captured requests into ordered multi-step scenario sequences (e.g. `customer.created` -> `payment_intent.succeeded` -> `invoice.paid`) with configurable inter-step delays, live WebSocket progress streaming, and assertion verification against expected HTTP status codes.
 - **Payload Fuzzing & Mutation Testing Suite**: Deterministically stress test endpoints with null injections, missing required schema keys, type confusion, corrupted HMAC signatures, and malformed JSON syntax to verify graceful 4xx client rejection vs unhandled 5xx server crashes.
 - **Built-in signature validator**: Test your webhook signing secrets against incoming headers and raw request bodies directly in the interface.
-- **Code & collection export**: Export captured requests as cURL commands, Python `httpx` scripts, JavaScript `fetch` calls, or complete Postman v2.1 and Bruno collections.
+- **Code & collection export**: Export captured requests as cURL commands, Python `httpx` scripts, JavaScript `fetch` calls, Pytest fixtures, Vitest/Jest suites, or complete Postman v2.1 and Bruno collections.
 - **Channel retention policies**: Configure maximum stored requests per channel with automatic database pruning.
 - **Keyboard navigation**: Navigate requests and trigger actions using vim-style and standard shortcuts (`j`, `k`, `r`, `c`, `d`, `s`, `e`, `f`, `?`).
+- **Interactive Terminal CLI**: Monitor webhooks live with `hook-trap tail -i` and trigger one-key actions (`r` replay, `b` burst, `c` clear, `q` quit) directly from the terminal without leaving the shell.
 - **Zero build dependencies**: The web inspector uses vanilla JavaScript and CSS served directly by FastAPI. No Node.js or build steps required.
 
 
@@ -198,6 +203,7 @@ Press `?` in the dashboard to view all shortcuts:
 | `--port` | `-p` | `8080` | Server port |
 | `--headers` | | `false` | Display all request headers in terminal output |
 | `--raw` | | `false` | Output raw JSON lines |
+| `--interactive` | `-i` | `false` | Enable interactive keyboard shortcuts (`r`, `b`, `c`, `q`) |
 
 ## Testing upstream retries
 

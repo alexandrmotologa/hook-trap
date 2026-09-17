@@ -131,6 +131,12 @@ async def upsert_channel_config(
     name: str | None = None,
     auto_forward_url: str | None = None,
     max_requests: int | None = None,
+    custom_response_mode: str | None = None,
+    custom_response_body: str | None = None,
+    custom_response_status: int | None = None,
+    custom_response_content_type: str | None = None,
+    signing_secret: str | None = None,
+    signing_provider: str | None = None,
 ) -> dict[str, Any]:
     """Create or update channel configuration."""
     _, _, _, channel_repo, _ = _get_repos(db_path)
@@ -139,6 +145,12 @@ async def upsert_channel_config(
         name=name,
         auto_forward_url=auto_forward_url,
         max_requests=max_requests,
+        custom_response_mode=custom_response_mode,
+        custom_response_body=custom_response_body,
+        custom_response_status=custom_response_status,
+        custom_response_content_type=custom_response_content_type,
+        signing_secret=signing_secret,
+        signing_provider=signing_provider,
     )
 
 

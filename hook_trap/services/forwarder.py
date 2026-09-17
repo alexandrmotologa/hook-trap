@@ -5,10 +5,12 @@ from typing import Any
 import httpx
 
 from hook_trap.database import (
+    get_channel_config,
     get_webhook_request_detail,
     increment_replay_count,
     insert_replay_log,
 )
+from hook_trap.services.signatures.signer import signature_signer
 from hook_trap.ws_manager import ConnectionManager, ws_manager
 
 logger = logging.getLogger("hook_trap.forwarder")
@@ -46,6 +48,9 @@ class WebhookForwarder:
         request_id: str,
         target_url: str,
         timeout: float = 10.0,
+        re_sign: bool = False,
+        signing_provider: str | None = None,
+        signing_secret: str | None = None,
     ) -> dict[str, Any]:
         """
         Execute an HTTP forward/replay of a captured request to target_url.
@@ -59,6 +64,40 @@ class WebhookForwarder:
         method = req_detail.get("method", "POST").upper()
         body_raw = req_detail.get("body_raw", "")
         query_params = req_detail.get("query_params", {})
+
+        # Handle automatic HMAC re-signing if enabled
+        if re_sign:
+            provider = signing_provider
+            secret = signing_secret
+            if not secret or not provider:
+                channel_cfg = await get_channel_config(db_path, channel_id)
+                if channel_cfg:
+                    secret = secret or channel_cfg.get("signing_secret")
+                    provider = provider or channel_cfg.get("signing_provider")
+
+            if secret:
+                if not provider:
+                    # Auto-detect from existing headers
+                    lower_headers = {k.lower(): k for k in headers_to_send}
+                    if "stripe-signature" in lower_headers:
+                        provider = "stripe"
+                    elif "x-hub-signature-256" in lower_headers:
+                        provider = "github"
+                    elif "x-shopify-hmac-sha256" in lower_headers:
+                        provider = "shopify"
+                    else:
+                        provider = "generic"
+
+                sig_header_name, sig_value = signature_signer.sign(
+                    provider=provider,
+                    secret=secret,
+                    payload=body_raw if isinstance(body_raw, str) else "",
+                )
+                # Remove case-insensitive old signature headers
+                to_remove = [k for k in headers_to_send if k.lower() == sig_header_name.lower()]
+                for k in to_remove:
+                    del headers_to_send[k]
+                headers_to_send[sig_header_name] = sig_value
 
         body_bytes = body_raw.encode("utf-8") if isinstance(body_raw, str) else body_raw
 
