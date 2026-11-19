@@ -29,4 +29,3 @@ __all__ = [
     "webhook_forwarder",
     "webhook_ingestion_service",
 ]
-

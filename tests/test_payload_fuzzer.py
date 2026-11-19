@@ -224,4 +224,3 @@ async def test_fuzzing_api_endpoints(temp_db):
             assert fuzz_data["total_cases"] == 5
             assert fuzz_data["vulnerable_count"] == 1
             mock_run.assert_awaited_once()
-

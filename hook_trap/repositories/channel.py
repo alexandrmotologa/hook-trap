@@ -95,9 +95,7 @@ class ChannelRepository:
                     else (existing["custom_response_content_type"] or "application/json")
                 )
                 new_sig_secret = (
-                    signing_secret
-                    if signing_secret is not None
-                    else existing["signing_secret"]
+                    signing_secret if signing_secret is not None else existing["signing_secret"]
                 )
                 new_sig_provider = (
                     signing_provider

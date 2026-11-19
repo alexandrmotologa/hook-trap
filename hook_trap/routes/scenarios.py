@@ -172,9 +172,7 @@ async def fuzz_captured_request(
     if not target_url:
         cfg = await get_channel_config(settings.db_path, channel_id)
         target_url = (
-            cfg.get("auto_forward_url")
-            if cfg
-            else None
+            cfg.get("auto_forward_url") if cfg else None
         ) or settings.default_auto_forward_url
 
     if not target_url:

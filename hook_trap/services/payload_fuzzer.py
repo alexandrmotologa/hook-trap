@@ -352,7 +352,6 @@ class PayloadFuzzer:
 
         results: list[FuzzTestResult] = []
 
-
         for case in cases:
             headers_to_send = {
                 k: v

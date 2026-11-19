@@ -122,9 +122,7 @@ class DatabaseManager:
                 ]
                 for col_name, col_def in migrations:
                     if col_name not in columns:
-                        await db.execute(
-                            f"ALTER TABLE channels ADD COLUMN {col_name} {col_def};"
-                        )
+                        await db.execute(f"ALTER TABLE channels ADD COLUMN {col_name} {col_def};")
 
             # Scenarios workflow table
             await db.execute(
@@ -167,4 +165,3 @@ class DatabaseManager:
             )
 
             await db.commit()
-

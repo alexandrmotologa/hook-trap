@@ -2,6 +2,100 @@ import json
 from typing import Any
 
 
+def generate_curl_snippet(
+    method: str,
+    target_url: str,
+    headers: dict[str, str],
+    body_raw: str,
+) -> str:
+    """Generate a reproducible cURL command for a captured webhook."""
+    m = (method or "POST").upper()
+    lines = [f'curl -X {m} "{target_url}"']
+
+    for k, v in headers.items():
+        if k.lower() not in ("host", "content-length", "connection"):
+            escaped_val = v.replace('"', '\\"')
+            lines.append(f'  -H "{k}: {escaped_val}"')
+
+    if body_raw and m not in ("GET", "HEAD"):
+        escaped_body = body_raw.replace("'", "'\\''")
+        lines.append(f"  --data '{escaped_body}'")
+
+    return " \\\n".join(lines)
+
+
+def generate_python_snippet(
+    method: str,
+    target_url: str,
+    headers: dict[str, str],
+    body_raw: str,
+) -> str:
+    """Generate a clean Python httpx script snippet for a captured webhook."""
+    m = (method or "POST").lower()
+    filtered_headers = {
+        k: v
+        for k, v in headers.items()
+        if k.lower() not in ("host", "content-length", "connection")
+    }
+    header_repr = json.dumps(filtered_headers, indent=4)
+
+    lines = [
+        "import httpx",
+        "",
+        f'url = "{target_url}"',
+        f"headers = {header_repr}",
+    ]
+
+    if body_raw and m not in ("get", "head"):
+        escaped_body = body_raw.replace('"""', '\\"\\"\\"')
+        lines.append(f'data = """{escaped_body}"""')
+        lines.append("")
+        lines.append(f"response = httpx.{m}(url, headers=headers, content=data)")
+    else:
+        lines.append("")
+        lines.append(f"response = httpx.{m}(url, headers=headers)")
+
+    lines.append('print(f"Status: {response.status_code}")')
+    lines.append("print(response.text)")
+    return "\n".join(lines)
+
+
+def generate_javascript_snippet(
+    method: str,
+    target_url: str,
+    headers: dict[str, str],
+    body_raw: str,
+) -> str:
+    """Generate a modern JavaScript fetch snippet for a captured webhook."""
+    m = (method or "POST").upper()
+    filtered_headers = {
+        k: v
+        for k, v in headers.items()
+        if k.lower() not in ("host", "content-length", "connection")
+    }
+    header_repr = json.dumps(filtered_headers, indent=2)
+
+    lines = [
+        f'fetch("{target_url}", {{',
+        f'  method: "{m}",',
+        f"  headers: {header_repr},",
+    ]
+
+    if body_raw and m not in ("GET", "HEAD"):
+        body_repr = json.dumps(body_raw)
+        lines.append(f"  body: {body_repr},")
+
+    lines.extend(
+        [
+            "})",
+            "  .then(res => res.text())",
+            "  .then(text => console.log(text))",
+            "  .catch(err => console.error(err));",
+        ]
+    )
+    return "\n".join(lines)
+
+
 def generate_pytest_snippet(
     method: str,
     target_url: str,
@@ -46,15 +140,12 @@ def generate_pytest_snippet(
         lines.append("")
         lines.append("    async with httpx.AsyncClient(timeout=10.0) as client:")
         lines.append(
-            f"        response = await client.request("
-            f'"{m}", url, headers=headers, {call_arg})'
+            f'        response = await client.request("{m}", url, headers=headers, {call_arg})'
         )
     else:
         lines.append("")
         lines.append("    async with httpx.AsyncClient(timeout=10.0) as client:")
-        lines.append(
-            f'        response = await client.request("{m}", url, headers=headers)'
-        )
+        lines.append(f'        response = await client.request("{m}", url, headers=headers)')
 
     lines.append("        assert response.status_code == 200")
     lines.append("")

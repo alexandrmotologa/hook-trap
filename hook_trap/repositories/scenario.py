@@ -197,9 +197,7 @@ class ScenarioRepository:
             else existing["description"]
         )
         new_target = (
-            data.get("target_url")
-            if data.get("target_url") is not None
-            else existing["target_url"]
+            data.get("target_url") if data.get("target_url") is not None else existing["target_url"]
         )
         new_delay = (
             data.get("delay_between_steps_ms")

@@ -12,4 +12,3 @@ __all__ = [
     "WebhookRequestRepository",
     "utc_now_iso",
 ]
-

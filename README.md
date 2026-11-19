@@ -22,7 +22,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/images/hook_trap_demo.gif" alt="hook-trap Interactive Demo" width="850" style="border-radius: 10px; border: 1px solid #1e293b;" />
+  <img src="docs/images/hook-trap_demo.gif" alt="hook-trap Interactive Demo" width="850" style="border-radius: 10px; border: 1px solid #1e293b;" />
 </p>
 
 ## Screenshots
@@ -138,13 +138,33 @@ hook-trap serve --port 8080 --auto-forward http://localhost:3000/api/webhook
 To monitor webhooks live in the console without opening a browser:
 
 ```bash
-hook-trap tail a1b2c3d4
+hook-trap tail a1b2c3d4 -i
 ```
 
-To inspect full headers in the terminal stream:
+Press `r` to replay the last event, `b` to fire a 5x burst test, or `q` to quit.
+
+### Command Line Workflow
+
+Query, replay, trigger, or export webhooks directly from your terminal:
 
 ```bash
-hook-trap tail a1b2c3d4 --headers
+# List captured webhooks for a channel
+hook-trap list a1b2c3d4 -n 10 -m POST
+
+# Inspect request headers and payload
+hook-trap show a1b2c3d4 <request_id>
+
+# Replay with dynamic HMAC signature re-signing
+hook-trap replay a1b2c3d4 <request_id> -t http://localhost:3000/api/webhook --re-sign --provider stripe --secret whsec_test123
+
+# Inject a synthetic Stripe or GitHub webhook for testing
+hook-trap trigger a1b2c3d4 --provider stripe-payment
+
+# Export captured events to JSON or Postman collection
+hook-trap export a1b2c3d4 --format postman -o webhooks.json
+
+# Clear channel history
+hook-trap clear a1b2c3d4 --force
 ```
 
 ## How to use

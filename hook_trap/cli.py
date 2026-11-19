@@ -2,6 +2,7 @@ import asyncio
 import json
 import sys
 import webbrowser
+from pathlib import Path
 from typing import Any
 
 import typer
@@ -12,6 +13,7 @@ from rich.syntax import Syntax
 from rich.table import Table
 from rich.text import Text
 
+from hook_trap import __version__
 from hook_trap.config import settings
 from hook_trap.server import create_app
 from hook_trap.tunnel import tunnel_manager
@@ -52,7 +54,7 @@ class CliRenderer:
         tunnel_url: str | None = None,
     ) -> None:
         """Render startup dashboard info using Rich."""
-        title = Text("HOOK-TRAP", style="bold cyan")
+        title = Text(f"HOOK-TRAP v{__version__}", style="bold cyan")
 
         grid = Table.grid(padding=(0, 2))
         grid.add_column(style="bold white", justify="right")
@@ -81,7 +83,7 @@ class CliRenderer:
         method = (req.get("method") or "POST").upper()
         method_style = self._method_styles.get(method, "bold white")
         path = req.get("path", "")
-        ts = req.get("timestamp", "")[:19]
+        ts = str(req.get("timestamp", ""))[:19]
         size = req.get("body_size", 0)
         ip = req.get("client_ip", "127.0.0.1")
 
@@ -95,7 +97,7 @@ class CliRenderer:
             tbl.add_column("Header")
             tbl.add_column("Value")
             for k, v in req["headers"].items():
-                tbl.add_row(k, v)
+                tbl.add_row(k, str(v))
             self.console.print(tbl)
 
         body = req.get("body")
@@ -116,6 +118,118 @@ class CliRenderer:
             f"  [bold magenta]↳ REPLAY[/bold magenta] [cyan]{target}[/cyan] "
             f"[bold green]{status} OK[/bold green] ({lat} ms)\n"
         )
+
+    def render_request_list(
+        self,
+        items: list[dict[str, Any]],
+        total: int,
+        channel_id: str,
+        limit: int,
+        offset: int,
+    ) -> None:
+        """Render a table of captured requests."""
+        if not items:
+            self.console.print(
+                f"[yellow]No webhooks captured yet for channel [bold]{channel_id}[/bold].[/yellow]"
+            )
+            return
+
+        tbl = Table(
+            title=f"Captured Webhooks (Channel: {channel_id} • Showing {len(items)} of {total})",
+            show_header=True,
+            header_style="bold cyan",
+            expand=True,
+        )
+        tbl.add_column("ID", style="bold white", width=8)
+        tbl.add_column("Method", justify="center", width=6)
+        tbl.add_column("Path", style="dim")
+        tbl.add_column("Size", justify="right", width=8)
+        tbl.add_column("Replays", justify="center", width=7)
+        tbl.add_column("Timestamp", style="dim", width=19)
+
+        for item in items:
+            req_id = str(item.get("id", ""))[:8]
+            m = (item.get("method") or "POST").upper()
+            m_style = self._method_styles.get(m, "bold white")
+            path = item.get("path", "")
+            size = f"{item.get('body_size', 0)} B"
+            replays = str(item.get("replay_count", 0))
+            ts = str(item.get("timestamp") or "")[:19]
+
+            tbl.add_row(
+                req_id,
+                f"[{m_style}]{m}[/{m_style}]",
+                path,
+                size,
+                replays,
+                ts,
+            )
+
+        self.console.print(tbl)
+
+    def render_request_detail(self, detail: dict[str, Any]) -> None:
+        """Render full request details including headers, body, and replays."""
+        req_id = detail.get("id", "")
+        method = (detail.get("method") or "POST").upper()
+        path = detail.get("path", "")
+        ts = detail.get("timestamp", "")
+        ip = detail.get("client_ip", "")
+        ct = detail.get("content_type", "n/a")
+        replays_count = detail.get("replay_count", 0)
+
+        meta_grid = Table.grid(padding=(0, 2))
+        meta_grid.add_column(style="bold cyan", justify="right")
+        meta_grid.add_column(style="white")
+        meta_grid.add_row("Request ID:", req_id)
+        meta_grid.add_row("Method / Path:", f"{method} {path}")
+        meta_grid.add_row("Client IP:", ip)
+        meta_grid.add_row("Content-Type:", str(ct))
+        meta_grid.add_row("Timestamp:", str(ts))
+        meta_grid.add_row("Replay Count:", str(replays_count))
+
+        self.console.print(
+            Panel(meta_grid, title=f"[bold]Webhook {req_id[:8]}[/bold]", border_style="cyan")
+        )
+
+        headers = detail.get("headers") or {}
+        if headers:
+            tbl = Table(title="Headers", show_header=True, header_style="bold dim")
+            tbl.add_column("Header", style="cyan")
+            tbl.add_column("Value")
+            for k, v in headers.items():
+                tbl.add_row(k, str(v))
+            self.console.print(tbl)
+
+        body_json = detail.get("body_json")
+        body_raw = detail.get("body_raw", "")
+        self.console.print("\n[bold]Payload:[/bold]")
+        if body_json is not None:
+            self.console.print(
+                Syntax(json.dumps(body_json, indent=2), "json", theme="monokai", line_numbers=False)
+            )
+        elif body_raw:
+            self.console.print(Syntax(body_raw, "text", theme="monokai", line_numbers=False))
+        else:
+            self.console.print("[dim](Empty body)[/dim]")
+
+        replays = detail.get("replays") or []
+        if replays:
+            rep_tbl = Table(title="Replay History", show_header=True, header_style="bold dim")
+            rep_tbl.add_column("Target URL")
+            rep_tbl.add_column("Status", justify="center")
+            rep_tbl.add_column("Latency", justify="right")
+            rep_tbl.add_column("Timestamp", style="dim")
+            for rep in replays:
+                st = rep.get("status_code", "ERR")
+                lat = f"{rep.get('latency_ms', 0):.1f} ms"
+                st_style = "green" if st == 200 else "red"
+                rep_tbl.add_row(
+                    rep.get("target_url", ""),
+                    f"[{st_style}]{st}[/{st_style}]",
+                    lat,
+                    str(rep.get("timestamp") or "")[:19],
+                )
+            self.console.print(rep_tbl)
 
 
 renderer = CliRenderer(console)
@@ -247,56 +361,47 @@ def tail(
 
     ws_url = f"ws://{host}:{port}/ws/{channel_id}"
     console.print(f"[bold cyan]Connecting to live stream on {ws_url}...[/bold cyan]")
-
-    use_interactive = interactive and sys.stdin.isatty() and not raw
-    if use_interactive:
+    if interactive:
         console.print(
-            "[dim]Interactive mode enabled: [bold cyan]r[/bold cyan]=Replay "
-            "[bold magenta]b[/bold magenta]=Burst (5x) [bold]c[/bold]=Clear "
-            "[bold red]q[/bold red]=Quit[/dim]\n"
+            "[dim]Interactive mode enabled. Shortcuts: "
+            "[bold white]r[/bold white]=replay last, "
+            "[bold white]b[/bold white]=burst 5x, "
+            "[bold white]c[/bold white]=clear screen, "
+            "[bold white]q[/bold white]=quit, "
+            "[bold white]?[/bold white]=help[/dim]\n"
         )
-    else:
-        console.print("[dim]Listening for incoming webhooks. Press CTRL+C to exit.[/dim]\n")
 
-    state = {
-        "last_request_id": None,
-        "last_target_url": "http://localhost:3000/api/webhook",
-        "stop": False,
-    }
+    use_interactive = interactive and sys.stdin.isatty()
 
     async def run_tail() -> None:
-        # Attempt to pre-fetch channel auto-forward URL
-        try:
-            async with httpx.AsyncClient(timeout=2.0) as client:
-                cfg_resp = await client.get(f"http://{host}:{port}/api/channels/{channel_id}/config")
-                if cfg_resp.status_code == 200:
-                    cfg_data = cfg_resp.json()
-                    if cfg_data.get("auto_forward_url"):
-                        state["last_target_url"] = cfg_data["auto_forward_url"]
-        except Exception:
-            pass
+        state: dict[str, Any] = {
+            "last_request_id": None,
+            "last_target_url": f"http://{host}:{port}/api/mock",
+            "stop": False,
+        }
+
+        async with httpx.AsyncClient(timeout=2.0) as client:
+            cfg_resp = await client.get(f"http://{host}:{port}/api/channels/{channel_id}/config")
+            if cfg_resp.status_code == 200:
+                cfg_data = cfg_resp.json()
+                if cfg_data.get("auto_forward_url"):
+                    state["last_target_url"] = cfg_data["auto_forward_url"]
 
         async def key_loop() -> None:
-            loop = asyncio.get_running_loop()
             while not state["stop"]:
-                key = await loop.run_in_executor(None, _read_char)
+                await asyncio.sleep(0.05)
+                key = _read_char()
                 if not key:
-                    await asyncio.sleep(0.08)
                     continue
-
                 if key == "q":
                     state["stop"] = True
                     break
                 elif key == "c":
                     console.clear()
-                    console.print(
-                        f"[bold cyan]hook-trap tail: channel {channel_id}[/bold cyan]\n"
-                    )
+                    console.print(f"[bold cyan]hook-trap tail: channel {channel_id}[/bold cyan]\n")
                 elif key in ("?", "h"):
                     console.print(
-                        "\n[dim]Shortcuts: [bold cyan]r[/bold cyan]=Replay "
-                        "[bold magenta]b[/bold magenta]=Burst 5x [bold]c[/bold]=Clear "
-                        "[bold red]q[/bold red]=Quit[/dim]\n"
+                        "[dim]Shortcuts: r (replay), b (burst 5x), c (clear), q (quit)[/dim]"
                     )
                 elif key == "r":
                     req_id = state.get("last_request_id")
@@ -413,8 +518,240 @@ def tail(
         console.print("\n[dim]Disconnected.[/dim]")
 
 
+@cli.command(name="list")
+def list_requests(
+    channel_id: str = typer.Argument(..., help="Channel identifier to query"),
+    db_path: str = typer.Option("hook_trap.db", "--db-path", help="Path to SQLite database file"),
+    limit: int = typer.Option(20, "-n", "--limit", help="Maximum requests to list"),
+    offset: int = typer.Option(0, "--offset", help="Number of records to skip"),
+    method: str | None = typer.Option(None, "-m", "--method", help="Filter by HTTP method"),
+    search: str | None = typer.Option(None, "-s", "--search", help="Search query in payload/path"),
+) -> None:
+    """List captured webhooks for a channel from the database."""
+    from hook_trap.database import get_webhook_requests, init_db
+
+    async def _run() -> None:
+        await init_db(db_path)
+        items, total = await get_webhook_requests(
+            db_path=db_path,
+            channel_id=channel_id,
+            limit=limit,
+            offset=offset,
+            method=method,
+            search=search,
+        )
+        renderer.render_request_list(items, total, channel_id, limit, offset)
+
+    asyncio.run(_run())
+
+
+@cli.command(name="show")
+def show_request(
+    channel_id: str = typer.Argument(..., help="Channel identifier"),
+    request_id: str = typer.Argument(..., help="Request identifier"),
+    db_path: str = typer.Option("hook_trap.db", "--db-path", help="Path to SQLite database file"),
+) -> None:
+    """Display headers, raw body, and replay logs for a captured webhook."""
+    from hook_trap.database import (
+        get_replay_logs_for_request,
+        get_webhook_request_detail,
+        init_db,
+    )
+
+    async def _run() -> None:
+        await init_db(db_path)
+        detail = await get_webhook_request_detail(db_path, channel_id, request_id)
+        if not detail:
+            console.print(f"[red]Request {request_id} not found in channel {channel_id}.[/red]")
+            raise typer.Exit(code=1)
+        replays = await get_replay_logs_for_request(db_path, request_id)
+        detail["replays"] = replays
+        renderer.render_request_detail(detail)
+
+    asyncio.run(_run())
+
+
+@cli.command(name="replay")
+def replay(
+    channel_id: str = typer.Argument(..., help="Channel identifier"),
+    request_id: str = typer.Argument(..., help="Request identifier"),
+    target_url: str = typer.Option(..., "-t", "--target", help="Target URL to forward replay to"),
+    db_path: str = typer.Option("hook_trap.db", "--db-path", help="Path to SQLite database file"),
+    re_sign: bool = typer.Option(False, "--re-sign", help="Recompute fresh HMAC signature headers"),
+    provider: str | None = typer.Option(
+        None, "--provider", help="Signing provider (stripe, github, shopify, generic)"
+    ),
+    secret: str | None = typer.Option(None, "--secret", help="HMAC secret key for re-signing"),
+    timeout: float = typer.Option(10.0, "--timeout", help="Replay request timeout in seconds"),
+) -> None:
+    """Replay a captured webhook to a target URL directly from CLI."""
+    from hook_trap.database import init_db
+    from hook_trap.forwarder import forward_request
+
+    async def _run() -> None:
+        await init_db(db_path)
+        console.print(f"[cyan]Dispatching replay for {request_id[:8]} -> {target_url}...[/cyan]")
+        try:
+            result = await forward_request(
+                db_path=db_path,
+                channel_id=channel_id,
+                request_id=request_id,
+                target_url=target_url,
+                timeout=timeout,
+                re_sign=re_sign,
+                signing_provider=provider,
+                signing_secret=secret,
+            )
+            renderer.render_replay_event(result)
+        except Exception as exc:
+            console.print(f"[red]Replay execution failed: {exc}[/red]")
+            raise typer.Exit(code=1) from exc
+
+    asyncio.run(_run())
+
+
+@cli.command(name="trigger")
+def trigger(
+    channel_id: str = typer.Argument(..., help="Channel identifier"),
+    provider: str = typer.Option(
+        "stripe-payment",
+        "-p",
+        "--provider",
+        help=(
+            "Preset: stripe-payment, stripe-checkout, github-push, "
+            "github-pr, shopify-order, slack-challenge, custom"
+        ),
+    ),
+    host: str = typer.Option("127.0.0.1", "-h", "--host", help="Server host"),
+    port: int = typer.Option(8080, "-p", "--port", help="Server port"),
+) -> None:
+    """Send a realistic synthetic sample webhook (Stripe, GitHub, Shopify, Slack) to the channel."""
+    import httpx
+
+    from hook_trap.services.samples import get_sample_template
+
+    template = get_sample_template(provider)
+    subpath = template.get("subpath", "")
+    target = f"http://{host}:{port}/catch/{channel_id}"
+    if subpath:
+        target = f"{target}/{subpath}"
+
+    headers = dict(template.get("headers", {}))
+    body = template.get("body", {})
+
+    console.print(f"[cyan]Sending synthetic '{provider}' webhook to {target}...[/cyan]")
+    try:
+        resp = httpx.post(target, json=body, headers=headers, timeout=5.0)
+        if resp.status_code in (200, 201):
+            console.print(
+                f"[bold green]✓ Webhook sent successfully! (HTTP {resp.status_code})[/bold green]"
+            )
+            console.print(f"[dim]{resp.text}[/dim]")
+        else:
+            console.print(
+                f"[yellow]Server responded with HTTP {resp.status_code}: {resp.text}[/yellow]"
+            )
+    except Exception as exc:
+        console.print(f"[red]Failed to connect to {target}: {exc}[/red]")
+        raise typer.Exit(code=1) from exc
+
+
+@cli.command(name="export")
+def export(
+    channel_id: str = typer.Argument(..., help="Channel identifier"),
+    format_name: str = typer.Option(
+        "json", "-f", "--format", help="Export format: json, postman, or bruno"
+    ),
+    output: str | None = typer.Option(
+        None, "-o", "--output", help="Output file path (prints to stdout if omitted)"
+    ),
+    db_path: str = typer.Option("hook_trap.db", "--db-path", help="Path to SQLite database file"),
+    host: str = typer.Option(
+        "127.0.0.1", "-h", "--host", help="Server host for collection base URLs"
+    ),
+    port: int = typer.Option(8080, "-p", "--port", help="Server port"),
+) -> None:
+    """Export captured webhooks for a channel to JSON, Postman collection, or Bruno collection."""
+    from hook_trap.database import get_all_channel_requests_for_export, init_db
+    from hook_trap.services.export import export_service
+
+    async def _run() -> None:
+        await init_db(db_path)
+        requests = await get_all_channel_requests_for_export(db_path, channel_id)
+        if not requests:
+            console.print(f"[yellow]No webhooks found for channel {channel_id} to export.[/yellow]")
+            return
+
+        base_url = f"http://{host}:{port}"
+        resp = export_service.export(
+            format_name=format_name,
+            channel_id=channel_id,
+            requests=requests,
+            base_url=base_url,
+        )
+        content_str = resp.body.decode("utf-8")
+
+        if output:
+            out_path = Path(output)
+            out_path.parent.mkdir(parents=True, exist_ok=True)
+            out_path.write_text(content_str, encoding="utf-8")
+            console.print(
+                f"[bold green]✓ Successfully exported {len(requests)} requests to "
+                f"[cyan]{output}[/cyan][/bold green]"
+            )
+        else:
+            console.print(content_str)
+
+    asyncio.run(_run())
+
+
+@cli.command(name="clear")
+def clear(
+    channel_id: str = typer.Argument(..., help="Channel identifier"),
+    db_path: str = typer.Option("hook_trap.db", "--db-path", help="Path to SQLite database file"),
+    force: bool = typer.Option(False, "-f", "--force", help="Bypass confirmation prompt"),
+) -> None:
+    """Clear all captured webhooks and replay logs for a channel."""
+    from hook_trap.database import delete_channel_requests, init_db
+
+    if not force:
+        confirm = typer.confirm(
+            f"Are you sure you want to delete all captured requests for channel '{channel_id}'?",
+            default=False,
+        )
+        if not confirm:
+            console.print("[dim]Aborted.[/dim]")
+            return
+
+    async def _run() -> None:
+        await init_db(db_path)
+        deleted = await delete_channel_requests(db_path, channel_id)
+        console.print(
+            f"[bold green]✓ Cleared channel {channel_id} ({deleted} requests removed).[/bold green]"
+        )
+
+    asyncio.run(_run())
+
+
+def version_callback(value: bool) -> None:
+    if value:
+        console.print(f"hook-trap v{__version__}")
+        raise typer.Exit()
+
+
 @cli.callback(invoke_without_command=True)
-def default_callback(ctx: typer.Context) -> None:
+def default_callback(
+    ctx: typer.Context,
+    version: bool = typer.Option(
+        None,
+        "-v",
+        "-V",
+        "--version",
+        help="Show version and exit.",
+        callback=version_callback,
+        is_eager=True,
+    ),
+) -> None:
     """If no subcommand is given, default to running the server."""
     if ctx.invoked_subcommand is None:
         ctx.invoke(serve)

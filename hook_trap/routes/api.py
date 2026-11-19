@@ -4,6 +4,7 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query, Response
 
+from hook_trap import __version__
 from hook_trap.config import settings
 from hook_trap.database import (
     delete_channel_requests,
@@ -24,7 +25,15 @@ from hook_trap.models import (
     SignatureVerifyRequest,
     SignatureVerifyResponse,
 )
-from hook_trap.services.export import export_service
+from hook_trap.services.export import (
+    export_service,
+    generate_curl_snippet,
+    generate_javascript_snippet,
+    generate_jest_snippet,
+    generate_pytest_snippet,
+    generate_python_snippet,
+)
+from hook_trap.services.samples import SAMPLE_TEMPLATES, get_sample_template
 from hook_trap.services.signatures import signature_verification_service
 
 logger = logging.getLogger("hook_trap.api")
@@ -253,11 +262,94 @@ async def export_channel_collection(
     )
 
 
+@router.get("/channels/{channel_id}/requests/{request_id}/snippet")
+async def get_request_snippet(
+    channel_id: str,
+    request_id: str,
+    format: str = Query("curl", pattern="^(curl|python|javascript|pytest|jest)$"),
+    target_url: str | None = None,
+) -> dict[str, str]:
+    """Generate reproducible code snippet (cURL, Python, JS, Pytest, Jest) for a request."""
+    detail = await get_webhook_request_detail(settings.db_path, channel_id, request_id)
+    if not detail:
+        raise HTTPException(status_code=404, detail="Request not found")
+
+    target = target_url or f"http://{settings.host}:{settings.port}/catch/{channel_id}"
+    method = detail.get("method", "POST")
+    headers = detail.get("headers", {})
+    body_raw = detail.get("body_raw", "")
+    body_json = detail.get("body_json")
+
+    if format == "curl":
+        code = generate_curl_snippet(method, target, headers, body_raw)
+    elif format == "python":
+        code = generate_python_snippet(method, target, headers, body_raw)
+    elif format == "javascript":
+        code = generate_javascript_snippet(method, target, headers, body_raw)
+    elif format == "pytest":
+        code = generate_pytest_snippet(method, target, headers, body_raw, body_json)
+    elif format == "jest":
+        code = generate_jest_snippet(method, target, headers, body_raw, body_json)
+    else:
+        raise HTTPException(status_code=400, detail=f"Unsupported snippet format: {format}")
+
+    return {"format": format, "target_url": target, "code": code}
+
+
+@router.get("/samples")
+async def list_sample_templates() -> dict[str, Any]:
+    """List available sample webhook presets for rapid testing."""
+    return {
+        "presets": [
+            {
+                "key": k,
+                "provider": v.get("provider"),
+                "description": v.get("description"),
+                "subpath": v.get("subpath"),
+            }
+            for k, v in SAMPLE_TEMPLATES.items()
+        ]
+    }
+
+
+@router.post("/channels/{channel_id}/trigger")
+async def trigger_sample_webhook(
+    channel_id: str,
+    provider: str = Query("stripe-payment", description="Sample template key"),
+) -> dict[str, Any]:
+    """Inject a realistic synthetic webhook payload into the channel."""
+    import httpx
+
+    template = get_sample_template(provider)
+    subpath = template.get("subpath", "")
+    target = f"http://{settings.host}:{settings.port}/catch/{channel_id}"
+    if subpath:
+        target = f"{target}/{subpath}"
+
+    headers = dict(template.get("headers", {}))
+    body = template.get("body", {})
+
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        resp = await client.post(target, json=body, headers=headers)
+        try:
+            resp_data = resp.json()
+        except Exception:
+            resp_data = resp.text
+
+        return {
+            "status": "triggered",
+            "provider": provider,
+            "target": target,
+            "response_status": resp.status_code,
+            "response": resp_data,
+        }
+
+
 @router.get("/system/status")
 async def system_status() -> dict[str, Any]:
     """Retrieve runtime system info including active public tunnel URL if present."""
     return {
-        "version": "0.1.0",
+        "version": __version__,
         "host": settings.host,
         "port": settings.port,
         "public_tunnel_url": settings.public_tunnel_url,

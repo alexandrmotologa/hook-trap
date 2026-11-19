@@ -49,7 +49,6 @@ def _get_repos(
     return _repo_cache[db_path]
 
 
-
 async def init_db(db_path: str) -> None:
     """Initialize SQLite database tables and indexes."""
     mgr, _, _, _, _ = _get_repos(db_path)
@@ -216,4 +215,3 @@ async def delete_scenario_step(db_path: str, scenario_id: str, step_id: str) -> 
     """Delete a step from a scenario."""
     _, _, _, _, scenario_repo = _get_repos(db_path)
     return await scenario_repo.delete_step(scenario_id, step_id)
-

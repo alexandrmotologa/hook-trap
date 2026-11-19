@@ -8,6 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
+from hook_trap import __version__
 from hook_trap.config import settings
 from hook_trap.database import init_db
 from hook_trap.routes.api import router as api_router
@@ -16,7 +17,6 @@ from hook_trap.routes.scenarios import router as scenarios_router
 from hook_trap.routes.websocket import router as ws_router
 
 STATIC_DIR = Path(__file__).parent / "static"
-
 
 
 @asynccontextmanager
@@ -44,7 +44,7 @@ def create_app(
     app = FastAPI(
         title="hook-trap",
         description="Real-Time Webhook Inspector & Local Forwarder",
-        version="0.1.0",
+        version=__version__,
         lifespan=lifespan,
     )
 
@@ -66,7 +66,6 @@ def create_app(
     app.include_router(api_router)
     app.include_router(scenarios_router)
     app.include_router(ws_router)
-
 
     @app.get("/healthz")
     async def health_check() -> dict[str, str]:

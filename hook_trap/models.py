@@ -348,4 +348,3 @@ class FuzzRunResult(BaseModel):
     all_passed: bool
     summary: str
     cases: list[FuzzTestResult] = Field(default_factory=list)
-
